@@ -23,10 +23,14 @@ struct AppReducer {
         /// Journal feature state
         var journal = JournalFeature.State()
         
-        // Placeholder states for other tabs (to be implemented)
-        // var gallery = GalleryFeature.State()
-        // var inbox = InboxFeature.State()
-        // var insights = InsightsFeature.State()
+        /// Gallery feature state
+        var gallery = GalleryFeature.State()
+        
+        /// Inbox feature state
+        var inbox = InboxFeature.State()
+        
+        /// Insights feature state
+        var insights = InsightsFeature.State()
         
         /// Initialize and check if onboarding is needed
         init() {
@@ -88,11 +92,9 @@ struct AppReducer {
         
         /// Child actions
         case journal(JournalFeature.Action)
-        
-        // Placeholder actions for other tabs
-        // case gallery(GalleryFeature.Action)
-        // case inbox(InboxFeature.Action)
-        // case insights(InsightsFeature.Action)
+        case gallery(GalleryFeature.Action)
+        case inbox(InboxFeature.Action)
+        case insights(InsightsFeature.Action)
     }
     
     // MARK: - Reducer
@@ -104,10 +106,17 @@ struct AppReducer {
             JournalFeature()
         }
         
-        // Add other scopes when implementing other tabs:
-        // Scope(state: \.gallery, action: \.gallery) {
-        //     GalleryFeature()
-        // }
+        Scope(state: \.gallery, action: \.gallery) {
+            GalleryFeature()
+        }
+        
+        Scope(state: \.inbox, action: \.inbox) {
+            InboxFeature()
+        }
+        
+        Scope(state: \.insights, action: \.insights) {
+            InsightsFeature()
+        }
         
         Reduce { state, action in
             switch action {
@@ -147,6 +156,15 @@ struct AppReducer {
                 return .none
                 
             case .journal:
+                return .none
+                
+            case .gallery:
+                return .none
+                
+            case .inbox:
+                return .none
+                
+            case .insights:
                 return .none
             }
         }

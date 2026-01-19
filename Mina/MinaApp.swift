@@ -23,6 +23,7 @@ struct MinaApp: App {
                 JournalEntry.self,
                 JournalAttachment.self,
                 InboxItem.self,
+                GalleryArtwork.self,
             ])
             
             let modelConfiguration = ModelConfiguration(
@@ -87,33 +88,27 @@ struct AppView: View {
             }
             .tag(AppReducer.Tab.journal)
             
-            // Tab 2: Gallery (placeholder)
-            PlaceholderTabView(
-                title: "Gallery",
-                icon: "photo.on.rectangle.angled",
-                description: "AI-generated artwork from your entries"
+            // Tab 2: Gallery
+            GalleryTabView(
+                store: store.scope(state: \.gallery, action: \.gallery)
             )
             .tabItem {
                 Label("Gallery", systemImage: "photo.on.rectangle.angled")
             }
             .tag(AppReducer.Tab.gallery)
             
-            // Tab 3: Inbox (placeholder)
-            PlaceholderTabView(
-                title: "Inbox",
-                icon: "tray.fill",
-                description: "Quick captures waiting to be processed"
+            // Tab 3: Inbox
+            InboxTabView(
+                store: store.scope(state: \.inbox, action: \.inbox)
             )
             .tabItem {
                 Label("Inbox", systemImage: "tray.fill")
             }
             .tag(AppReducer.Tab.inbox)
             
-            // Tab 4: Insights (placeholder)
-            PlaceholderTabView(
-                title: "Insights",
-                icon: "chart.line.uptrend.xyaxis",
-                description: "Your journaling stats and monthly stories"
+            // Tab 4: Insights
+            InsightsTabView(
+                store: store.scope(state: \.insights, action: \.insights)
             )
             .tabItem {
                 Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
