@@ -1,6 +1,7 @@
 import SwiftUI
 import ComposableArchitecture
 import VisionKit
+import PhotosUI
 
 // MARK: - Journal Tab View
 // Main container view for the Journal (Home) tab with inline editing
@@ -9,6 +10,7 @@ struct JournalTabView: View {
     
     @Bindable var store: StoreOf<JournalFeature>
     @FocusState private var isEditorFocused: Bool
+    @State private var selectedPhotos: [PhotosPickerItem] = []
     
     var body: some View {
         ZStack {
@@ -106,6 +108,22 @@ struct JournalTabView: View {
             )
             .ignoresSafeArea()
         }
+        .photosPicker(
+            isPresented: Binding(
+                get: { store.showingPhotoPicker },
+                set: { if !$0 { store.send(.hidePhotoPicker) } }
+            ),
+            selection: $selectedPhotos,
+            maxSelectionCount: 10,
+            matching: .images,
+            photoLibrary: .shared()
+        )
+        .onChange(of: selectedPhotos) { _, newValue in
+            if !newValue.isEmpty {
+                store.send(.photosSelected(newValue))
+                selectedPhotos = []
+            }
+        }
     }
     
     // MARK: - Content View
@@ -149,6 +167,18 @@ struct JournalTabView: View {
                     // Pending attachments preview
                     if !store.pendingAttachments.isEmpty {
                         pendingAttachmentsView
+                    }
+                    
+                    // Loading indicator for photo picker
+                    if store.isLoadingPhotos {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .tint(.minaSecondary)
+                            Text("Loading photos...")
+                                .font(.minaCaption)
+                                .foregroundStyle(Color.minaSecondary)
+                        }
+                        .padding(.vertical, 8)
                     }
                 }
                 .padding(.top, 8)

@@ -56,7 +56,8 @@ Mina/
 │   ├── DatabaseClient.swift
 │   ├── DateClient.swift
 │   ├── SpeechClient.swift
-│   └── CameraClient.swift
+│   ├── CameraClient.swift
+│   └── PhotoPickerClient.swift
 └── Features/
     └── Journal/
         ├── JournalFeature.swift

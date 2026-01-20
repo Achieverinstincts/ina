@@ -3,6 +3,7 @@ import ComposableArchitecture
 import SwiftData
 import Speech
 import UIKit
+import PhotosUI
 
 // MARK: - Journal Feature
 // Parent reducer for the Journal (Home) tab with inline editing
@@ -76,6 +77,10 @@ struct JournalFeature {
         var showingDocumentScanner: Bool = false
         var cameraAuthorizationStatus: CameraAuthorizationStatus = .notDetermined
         var pendingAttachments: [CapturedImage] = [] // Photos/scans to attach to current entry
+        
+        /// Photo picker state
+        var showingPhotoPicker: Bool = false
+        var isLoadingPhotos: Bool = false
         
         /// Child: Active input bar state
         var activeInput = ActiveInputFeature.State()
@@ -155,6 +160,13 @@ struct JournalFeature {
         case cameraError(String)
         case removePendingAttachment(UUID)
         
+        // Photo picker actions
+        case showPhotoPicker
+        case hidePhotoPicker
+        case photosSelected([PhotosPickerItem])
+        case photosLoaded([PickedImage])
+        case photoLoadError(String)
+        
         // Child actions
         case entryDetail(PresentationAction<EntryEditorFeature.Action>)
         case activeInput(ActiveInputFeature.Action)
@@ -170,6 +182,7 @@ struct JournalFeature {
     @Dependency(\.continuousClock) var clock
     @Dependency(\.speechClient) var speechClient
     @Dependency(\.cameraClient) var cameraClient
+    @Dependency(\.photoPickerClient) var photoPickerClient
     
     // MARK: - Reducer
     
@@ -363,8 +376,8 @@ struct JournalFeature {
                 return .send(.showCameraOptions)
                 
             case .attachTapped:
-                // TODO: Show attachment options
-                return .none
+                // Show photo picker
+                return .send(.showPhotoPicker)
                 
             case .dismissKeyboard:
                 // Save if there's content, otherwise cancel
@@ -600,6 +613,43 @@ struct JournalFeature {
                 
             case let .removePendingAttachment(id):
                 state.pendingAttachments.removeAll { $0.id == id }
+                return .none
+                
+            // MARK: Photo Picker Actions
+                
+            case .showPhotoPicker:
+                state.showingPhotoPicker = true
+                return .none
+                
+            case .hidePhotoPicker:
+                state.showingPhotoPicker = false
+                return .none
+                
+            case let .photosSelected(items):
+                state.showingPhotoPicker = false
+                guard !items.isEmpty else { return .none }
+                
+                state.isLoadingPhotos = true
+                return .run { send in
+                    do {
+                        let images = try await photoPickerClient.loadImages(items)
+                        await send(.photosLoaded(images))
+                    } catch {
+                        await send(.photoLoadError(error.localizedDescription))
+                    }
+                }
+                
+            case let .photosLoaded(images):
+                state.isLoadingPhotos = false
+                // Convert PickedImages to CapturedImages and add to pending
+                for image in images {
+                    state.pendingAttachments.append(image.asCapturedImage)
+                }
+                return .none
+                
+            case let .photoLoadError(error):
+                state.isLoadingPhotos = false
+                state.errorMessage = error
                 return .none
                 
             // MARK: Child Actions
