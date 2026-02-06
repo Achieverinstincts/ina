@@ -88,6 +88,9 @@ struct JournalFeature {
         /// Child: Entry detail (for viewing/editing existing from list)
         @Presents var entryDetail: EntryEditorFeature.State?
         
+        /// Child: Settings
+        @Presents var settings: SettingsFeature.State?
+        
         /// Whether the user is actively typing
         var isTyping: Bool {
             isEditing && editorFocused
@@ -170,6 +173,7 @@ struct JournalFeature {
         // Child actions
         case entryDetail(PresentationAction<EntryEditorFeature.Action>)
         case activeInput(ActiveInputFeature.Action)
+        case settings(PresentationAction<SettingsFeature.Action>)
         
         // Legacy (for compatibility)
         case newEntryTapped
@@ -277,7 +281,7 @@ struct JournalFeature {
                 return .none
                 
             case .settingsTapped:
-                // TODO: Navigate to settings
+                state.settings = SettingsFeature.State()
                 return .none
                 
             // MARK: Inline Editing
@@ -670,10 +674,20 @@ struct JournalFeature {
                 
             case .activeInput:
                 return .none
+                
+            case .settings(.presented(.dismissSettings)):
+                state.settings = nil
+                return .none
+                
+            case .settings:
+                return .none
             }
         }
         .ifLet(\.$entryDetail, action: \.entryDetail) {
             EntryEditorFeature()
+        }
+        .ifLet(\.$settings, action: \.settings) {
+            SettingsFeature()
         }
     }
 }

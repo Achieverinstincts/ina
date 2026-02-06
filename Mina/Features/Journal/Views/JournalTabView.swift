@@ -124,6 +124,9 @@ struct JournalTabView: View {
                 selectedPhotos = []
             }
         }
+        .sheet(item: $store.scope(state: \.settings, action: \.settings)) { settingsStore in
+            SettingsView(store: settingsStore)
+        }
     }
     
     // MARK: - Content View
