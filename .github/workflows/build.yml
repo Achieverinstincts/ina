@@ -28,12 +28,16 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Resolve dependencies
-        run: xcodebuild -resolvePackageDependencies -scheme Mina -destination 'generic/platform=iOS Simulator'
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
 
       - name: Build
         run: |
           xcodebuild build \
+            -project Mina.xcodeproj \
             -scheme Mina \
             -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             -derivedDataPath build \
