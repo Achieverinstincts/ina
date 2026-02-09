@@ -19,7 +19,7 @@ struct EmptyStateView: View {
                 .foregroundStyle(Color.minaTertiary)
             
             // Optional: Subtle hint
-            Text("Tap below to write your first entry")
+            Text("Tap to write your first entry")
                 .font(.minaCaption1)
                 .foregroundStyle(Color.minaTertiary.opacity(0.7))
             

@@ -30,18 +30,6 @@ struct JournalTabView: View {
                 contentView
             }
             
-            // Floating Input Bar (hidden when editing)
-            if !store.isEditing {
-                VStack {
-                    Spacer()
-                    FloatingInputBar {
-                        store.send(.startEditing)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                }
-            }
-            
             // Camera options sheet
             if store.showingCameraOptions {
                 Color.black.opacity(0.3)
