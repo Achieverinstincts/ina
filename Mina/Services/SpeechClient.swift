@@ -150,9 +150,9 @@ private actor AudioState {
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private var _currentAudioLevel: Float = 0
+    nonisolated(unsafe) private var _currentAudioLevel: Float = 0
     
-    var currentAudioLevel: Float {
+    nonisolated var currentAudioLevel: Float {
         _currentAudioLevel
     }
     
