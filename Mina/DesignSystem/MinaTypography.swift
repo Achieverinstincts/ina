@@ -41,6 +41,9 @@ extension Font {
     /// Caption 1 - 12pt regular (timestamps)
     static let minaCaption1 = Font.system(size: 12, weight: .regular, design: .default)
     
+    /// Caption alias
+    static let minaCaption = minaCaption1
+    
     /// Caption 2 - 11pt regular
     static let minaCaption2 = Font.system(size: 11, weight: .regular, design: .default)
     
