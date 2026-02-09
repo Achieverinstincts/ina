@@ -37,4 +37,5 @@ jobs:
             -scheme Mina \
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
+            -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
