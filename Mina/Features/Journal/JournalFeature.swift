@@ -426,7 +426,7 @@ struct JournalFeature {
                         for await _ in self.clock.timer(interval: .milliseconds(100)) {
                             await send(.recordingTick)
                             // Get real audio level from speech client
-                            let level = CGFloat(speechClient.audioLevel())
+                            let level = CGFloat(await speechClient.audioLevel())
                             await send(.audioLevelUpdated(level))
                         }
                     }

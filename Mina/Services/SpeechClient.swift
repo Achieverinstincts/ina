@@ -20,7 +20,7 @@ struct SpeechClient {
     var isAvailable: @Sendable () -> Bool
     
     /// Get current audio level (0.0 - 1.0) for waveform visualization
-    var audioLevel: @Sendable () -> Float
+    var audioLevel: @Sendable () async -> Float
 }
 
 // MARK: - Transcription Result
@@ -138,7 +138,7 @@ extension SpeechClient {
             },
             
             audioLevel: {
-                audioState.currentAudioLevel
+                await audioState.currentAudioLevel
             }
         )
     }()
