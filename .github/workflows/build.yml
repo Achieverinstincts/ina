@@ -35,7 +35,27 @@ jobs:
         run: |
           xcodebuild build \
             -scheme Mina \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath build \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Prepare artifact
+        run: |
+          APP_PATH=$(find build/Build/Products -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in build products"
+            find build/Build/Products -type d -maxdepth 3
+            exit 1
+          fi
+          echo "Found app: $APP_PATH"
+          mkdir -p artifact
+          cp -R "$APP_PATH" artifact/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mina-Simulator
+          path: artifact/*.app
+          if-no-files-found: error
