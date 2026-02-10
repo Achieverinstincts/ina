@@ -20,12 +20,24 @@ struct GalleryCardView: View {
                 // Placeholder/background color based on mood
                 Color(hex: artwork.placeholderColor)
                 
-                // Placeholder artwork pattern
-                artworkPlaceholder
+                // Real image or placeholder
+                if let imageData = artwork.imageData,
+                   let uiImage = UIImage(data: imageData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectFill()
+                } else {
+                    // Placeholder artwork pattern
+                    artworkPlaceholder
+                }
                 
                 // Status overlay for generating/failed
-                if artwork.status != .completed {
-                    statusOverlay
+                if artwork.status == .generating {
+                    generatingOverlay
+                } else if artwork.status == .failed {
+                    failedOverlay
+                } else if artwork.status == .pending {
+                    pendingOverlay
                 }
             }
             .frame(height: cardHeight)
@@ -52,6 +64,68 @@ struct GalleryCardView: View {
             }
             .padding(.top, 8)
             .padding(.horizontal, 2)
+        }
+    }
+    
+    // MARK: - Generating Overlay
+    
+    private var generatingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+            
+            VStack(spacing: 8) {
+                ProgressView()
+                    .tint(.white)
+                
+                Text("Generating...")
+                    .font(.minaCaption1)
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+    
+    // MARK: - Failed Overlay
+    
+    private var failedOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+            
+            VStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                
+                Text("Failed")
+                    .font(.minaCaption1)
+                    .foregroundStyle(.white)
+                
+                if let error = artwork.errorMessage {
+                    Text(error)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Pending Overlay
+    
+    private var pendingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+            
+            VStack(spacing: 8) {
+                Image(systemName: "clock")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                
+                Text("Pending")
+                    .font(.minaCaption1)
+                    .foregroundStyle(.white)
+            }
         }
     }
     
@@ -188,32 +262,15 @@ struct GalleryCardView: View {
             }
         }
     }
-    
-    // MARK: - Status Overlay
-    
-    private var statusOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-            
-            VStack(spacing: 8) {
-                if artwork.status == .generating {
-                    ProgressView()
-                        .tint(.white)
-                } else if artwork.status == .pending {
-                    Image(systemName: "clock")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                } else if artwork.status == .failed {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                }
-                
-                Text(artwork.status.label)
-                    .font(.minaCaption1)
-                    .foregroundStyle(.white)
-            }
-        }
+}
+
+// MARK: - AspectFill Modifier
+
+private extension Image {
+    func aspectFill() -> some View {
+        self
+            .scaledToFill()
+            .clipped()
     }
 }
 

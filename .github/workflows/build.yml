@@ -34,6 +34,15 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Generate Secrets stub
+        run: |
+          cat > Mina/Secrets.swift << 'EOF'
+          import Foundation
+          enum Secrets {
+              static let geminiAPIKey = "CI_PLACEHOLDER"
+          }
+          EOF
+
       - name: Build
         run: |
           xcodebuild build \

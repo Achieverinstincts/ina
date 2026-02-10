@@ -32,6 +32,12 @@ struct InsightsFeature {
         /// Streak info
         var streakInfo: StreakInfo = StreakInfo()
         
+        /// Whether AI story generation is in progress
+        var isGeneratingStory: Bool = false
+        
+        /// Error from story generation
+        var storyGenerationError: String? = nil
+        
         /// Show story detail
         @Presents var storyDetail: MonthlyStoryDetailFeature.State?
         
@@ -175,6 +181,7 @@ struct InsightsFeature {
         case viewStoryTapped
         case generateNewStory
         case storyGenerated(MonthlyStory)
+        case storyGenerationFailed(String)
         case storyDetail(PresentationAction<MonthlyStoryDetailFeature.Action>)
         
         /// Sharing
@@ -185,6 +192,7 @@ struct InsightsFeature {
     // MARK: - Dependencies
     
     @Dependency(\.continuousClock) var clock
+    @Dependency(\.geminiClient) var geminiClient
     
     // MARK: - Reducer
     
@@ -230,21 +238,8 @@ struct InsightsFeature {
                     )
                     await send(.streakLoaded(streakInfo))
                     
-                    let story = MonthlyStory(
-                        id: UUID(),
-                        month: "January",
-                        year: 2026,
-                        summary: "This month was a journey of self-discovery and professional growth. You navigated challenges at work while maintaining focus on your health goals.",
-                        highlights: [
-                            "Started a new morning routine",
-                            "Completed a major project at work",
-                            "Reconnected with an old friend"
-                        ],
-                        moodSummary: "Your mood was generally positive, with some challenging days mid-month that you worked through with resilience.",
-                        topThemes: ["Growth", "Balance", "Connection"],
-                        generatedAt: Date()
-                    )
-                    await send(.storyLoaded(story))
+                    // Trigger AI story generation
+                    await send(.generateNewStory)
                 }
                 
             case .refresh:
@@ -305,18 +300,49 @@ struct InsightsFeature {
                 return .none
                 
             case .generateNewStory:
-                // TODO: Trigger AI story generation
-                return .none
+                state.isGeneratingStory = true
+                state.storyGenerationError = nil
+                return .run { [stats = state.stats, moodTrend = state.moodTrend, topics = state.topTopics, streak = state.streakInfo] send in
+                    let prompt = Self.buildStoryPrompt(
+                        stats: stats,
+                        moodTrend: moodTrend,
+                        topics: topics,
+                        streak: streak
+                    )
+                    
+                    do {
+                        let responseText = try await geminiClient.generateText(prompt)
+                        let story = Self.parseStoryResponse(responseText)
+                        await send(.storyGenerated(story))
+                    } catch {
+                        await send(.storyGenerationFailed(error.localizedDescription))
+                    }
+                }
                 
             case let .storyGenerated(story):
+                state.isGeneratingStory = false
                 state.monthlyStory = story
+                // Also update the detail view if it's open (for regeneration)
+                if state.storyDetail != nil {
+                    state.storyDetail = MonthlyStoryDetailFeature.State(story: story)
+                }
                 return .none
                 
             case .storyDetail(.presented(.dismiss)):
                 state.storyDetail = nil
                 return .none
                 
+            case .storyDetail(.presented(.regenerate)):
+                // Bubble regenerate up to trigger a new AI story generation
+                return .send(.generateNewStory)
+                
             case .storyDetail:
+                return .none
+                
+            case let .storyGenerationFailed(error):
+                state.isGeneratingStory = false
+                state.storyGenerationError = error
+                print("Story generation failed: \(error)")
                 return .none
                 
             case .shareInsights:
@@ -331,6 +357,119 @@ struct InsightsFeature {
         .ifLet(\.$storyDetail, action: \.storyDetail) {
             MonthlyStoryDetailFeature()
         }
+    }
+}
+
+// MARK: - AI Story Helpers
+
+extension InsightsFeature {
+    
+    /// Build the prompt sent to Gemini for monthly story generation.
+    /// Uses aggregated stats (not raw entry content) to protect user privacy.
+    static func buildStoryPrompt(
+        stats: JournalStats,
+        moodTrend: String,
+        topics: [TopicStat],
+        streak: StreakInfo
+    ) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let monthFormatter = DateFormatter()
+        monthFormatter.dateFormat = "MMMM"
+        let currentMonth = monthFormatter.string(from: now)
+        let currentYear = calendar.component(.year, from: now)
+        
+        let topicsList = topics.prefix(5).map { "\($0.topic) (\($0.count) entries, \(Int($0.percentage * 100))%)" }.joined(separator: ", ")
+        
+        return """
+        You are a compassionate and insightful journaling assistant for the app "Mina". \
+        Generate a personalized monthly reflection story based on these journaling statistics. \
+        Write in second person ("you"). Be warm, encouraging, and specific.
+
+        Month: \(currentMonth) \(currentYear)
+        Total entries this period: \(stats.entriesThisPeriod)
+        Total words written: \(stats.totalWords)
+        Average words per entry: \(stats.averageWordsPerEntry)
+        Overall mood trend: \(moodTrend)
+        Most productive day: \(stats.mostProductiveDay)
+        Most productive time: \(stats.mostProductiveTime)
+        Current journaling streak: \(streak.currentStreak) days
+        Longest streak: \(streak.longestStreak) days
+        Top themes: \(topicsList)
+
+        Respond in EXACTLY this JSON format (no markdown, no code fences, just raw JSON):
+        {
+          "summary": "A 2-3 sentence summary of the month's journaling journey.",
+          "highlights": ["highlight 1", "highlight 2", "highlight 3"],
+          "moodSummary": "A 1-2 sentence description of the mood journey this month.",
+          "topThemes": ["theme1", "theme2", "theme3"]
+        }
+
+        Rules:
+        - summary should reference specific stats naturally (entries, words, streak)
+        - highlights should be 3 specific, encouraging observations drawn from the data
+        - moodSummary should reference the mood trend ("\(moodTrend)") and be supportive
+        - topThemes should be 3-5 single-word or short-phrase themes derived from the top topics
+        - Keep the tone personal, warm, and reflective — not generic
+        """
+    }
+    
+    /// Parse the JSON response from Gemini into a MonthlyStory.
+    /// Falls back gracefully if JSON parsing fails.
+    static func parseStoryResponse(_ text: String) -> MonthlyStory {
+        let calendar = Calendar.current
+        let now = Date()
+        let monthFormatter = DateFormatter()
+        monthFormatter.dateFormat = "MMMM"
+        let currentMonth = monthFormatter.string(from: now)
+        let currentYear = calendar.component(.year, from: now)
+        
+        // Try to parse structured JSON
+        // Strip any markdown code fences if the model included them
+        var cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanedText.hasPrefix("```") {
+            // Remove opening fence (```json or ```)
+            if let firstNewline = cleanedText.firstIndex(of: "\n") {
+                cleanedText = String(cleanedText[cleanedText.index(after: firstNewline)...])
+            }
+            // Remove closing fence
+            if cleanedText.hasSuffix("```") {
+                cleanedText = String(cleanedText.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        
+        struct StoryJSON: Decodable {
+            let summary: String
+            let highlights: [String]
+            let moodSummary: String
+            let topThemes: [String]
+        }
+        
+        if let data = cleanedText.data(using: .utf8),
+           let parsed = try? JSONDecoder().decode(StoryJSON.self, from: data) {
+            return MonthlyStory(
+                id: UUID(),
+                month: currentMonth,
+                year: currentYear,
+                summary: parsed.summary,
+                highlights: parsed.highlights,
+                moodSummary: parsed.moodSummary,
+                topThemes: parsed.topThemes,
+                generatedAt: now
+            )
+        }
+        
+        // Fallback: use the raw text as the summary
+        return MonthlyStory(
+            id: UUID(),
+            month: currentMonth,
+            year: currentYear,
+            summary: text,
+            highlights: [],
+            moodSummary: "Your mood this month has been reflective.",
+            topThemes: ["Reflection"],
+            generatedAt: now
+        )
     }
 }
 

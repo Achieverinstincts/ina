@@ -105,7 +105,9 @@ struct GalleryFeature {
         let mood: Mood?
         let artStyle: String
         let aspectRatio: Double
-        let status: GenerationStatus
+        var status: GenerationStatus
+        var imageData: Data?
+        var errorMessage: String?
         
         /// Placeholder color when image isn't loaded
         var placeholderColor: String {
@@ -175,6 +177,7 @@ struct GalleryFeature {
     // MARK: - Dependencies
     
     @Dependency(\.continuousClock) var clock
+    @Dependency(\.geminiClient) var geminiClient
     
     // MARK: - Reducer
     
@@ -202,7 +205,8 @@ struct GalleryFeature {
                             mood: artwork.mood,
                             artStyle: artwork.artStyle,
                             aspectRatio: artwork.aspectRatio,
-                            status: artwork.status
+                            status: artwork.status,
+                            imageData: artwork.imageData.isEmpty ? nil : artwork.imageData
                         )
                     }
                     
@@ -257,23 +261,90 @@ struct GalleryFeature {
                 return .none
                 
             case let .generateArtworkForEntry(entryId):
-                // TODO: Trigger AI image generation
-                print("Generating artwork for entry: \(entryId)")
-                return .none
+                // Find the artwork for this entry (or create one)
+                // For now, create a new pending artwork and start generation
+                let artworkId = UUID()
+                let artStyle = ArtStyle.allCases.randomElement() ?? .dreamy
+                let newItem = ArtworkItem(
+                    id: artworkId,
+                    entryId: entryId,
+                    entryTitle: "New Entry",
+                    entryDate: Date(),
+                    mood: nil,
+                    artStyle: artStyle.rawValue,
+                    aspectRatio: [0.8, 1.0, 1.2, 1.3, 1.5].randomElement() ?? 1.0,
+                    status: .generating,
+                    imageData: nil
+                )
+                state.artworks.insert(newItem, at: 0)
+                
+                return .run { [geminiClient] send in
+                    let prompt = Self.buildImagePrompt(
+                        entryTitle: newItem.entryTitle,
+                        mood: newItem.mood,
+                        artStyle: artStyle
+                    )
+                    
+                    let aspectRatio = Self.aspectRatioString(from: newItem.aspectRatio)
+                    
+                    do {
+                        let imageData = try await geminiClient.generateImage(prompt, aspectRatio)
+                        
+                        var generatedItem = newItem
+                        generatedItem.status = .completed
+                        generatedItem.imageData = imageData
+                        
+                        await send(.artworkGenerated(generatedItem))
+                    } catch {
+                        await send(.generationFailed(artworkId, error.localizedDescription))
+                    }
+                }
                 
             case let .regenerateArtwork(artworkId):
-                // TODO: Regenerate with different seed/style
-                print("Regenerating artwork: \(artworkId)")
-                return .none
+                guard var artwork = state.artworks[id: artworkId] else { return .none }
+                artwork.status = .generating
+                artwork.imageData = nil
+                artwork.errorMessage = nil
+                state.artworks[id: artworkId] = artwork
+                
+                let artStyle = ArtStyle(rawValue: artwork.artStyle) ?? .dreamy
+                
+                return .run { [geminiClient, artwork] send in
+                    let prompt = Self.buildImagePrompt(
+                        entryTitle: artwork.entryTitle,
+                        mood: artwork.mood,
+                        artStyle: artStyle
+                    )
+                    
+                    let aspectRatio = Self.aspectRatioString(from: artwork.aspectRatio)
+                    
+                    do {
+                        let imageData = try await geminiClient.generateImage(prompt, aspectRatio)
+                        
+                        var regenerated = artwork
+                        regenerated.status = .completed
+                        regenerated.imageData = imageData
+                        
+                        await send(.artworkGenerated(regenerated))
+                    } catch {
+                        await send(.generationFailed(artworkId, error.localizedDescription))
+                    }
+                }
                 
             case let .artworkGenerated(artwork):
-                state.artworks.insert(artwork, at: 0)
+                // Replace if it exists (regeneration), otherwise insert
+                if state.artworks[id: artwork.id] != nil {
+                    state.artworks[id: artwork.id] = artwork
+                } else {
+                    state.artworks.insert(artwork, at: 0)
+                }
                 return .none
                 
             case let .generationFailed(artworkId, error):
                 if var artwork = state.artworks[id: artworkId] {
-                    // Mark as failed - but ArtworkItem is a struct so we need to replace
-                    print("Generation failed for \(artworkId): \(error)")
+                    artwork.status = .failed
+                    artwork.errorMessage = error
+                    state.artworks[id: artworkId] = artwork
                 }
                 return .none
                 
@@ -301,6 +372,60 @@ struct GalleryFeature {
         .ifLet(\.$selectedArtwork, action: \.selectedArtwork) {
             ArtworkDetailFeature()
         }
+    }
+    
+    // MARK: - Prompt Building
+    
+    /// Builds an image generation prompt from journal entry metadata.
+    static func buildImagePrompt(
+        entryTitle: String,
+        mood: Mood?,
+        artStyle: ArtStyle
+    ) -> String {
+        var parts: [String] = []
+        
+        // Core subject from the entry title
+        parts.append("Create a beautiful artwork inspired by the journal entry titled \"\(entryTitle)\".")
+        
+        // Mood influence
+        if let mood = mood {
+            let moodDescription: String
+            switch mood {
+            case .great: moodDescription = "The mood is joyful and uplifting, with warm bright energy."
+            case .good: moodDescription = "The mood is pleasant and content, with a gentle positive feeling."
+            case .okay: moodDescription = "The mood is neutral and reflective, with a calm balanced atmosphere."
+            case .low: moodDescription = "The mood is melancholic and introspective, with muted contemplative tones."
+            case .bad: moodDescription = "The mood is heavy and somber, with deep emotional undertones."
+            }
+            parts.append(moodDescription)
+        }
+        
+        // Art style
+        parts.append("Style: \(artStyle.promptSuffix).")
+        
+        // Quality guidance
+        parts.append("High quality, artistic composition, no text or words in the image.")
+        
+        return parts.joined(separator: " ")
+    }
+    
+    /// Converts a numeric aspect ratio to the closest supported API string.
+    static func aspectRatioString(from ratio: Double) -> String {
+        // Map to closest supported: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9
+        let supported: [(String, Double)] = [
+            ("9:16", 9.0/16.0),   // 0.5625
+            ("2:3",  2.0/3.0),    // 0.667
+            ("3:4",  3.0/4.0),    // 0.75
+            ("4:5",  4.0/5.0),    // 0.8
+            ("1:1",  1.0),        // 1.0
+            ("5:4",  5.0/4.0),    // 1.25
+            ("4:3",  4.0/3.0),    // 1.333
+            ("3:2",  3.0/2.0),    // 1.5
+            ("16:9", 16.0/9.0),   // 1.778
+        ]
+        
+        let closest = supported.min { abs($0.1 - ratio) < abs($1.1 - ratio) }
+        return closest?.0 ?? "1:1"
     }
 }
 

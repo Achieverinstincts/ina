@@ -93,8 +93,17 @@ struct ArtworkDetailView: View {
             // Placeholder color
             Color(hex: store.artwork.placeholderColor)
             
-            // Artwork pattern (same as card)
-            artworkPattern
+            // Real image or placeholder
+            if let imageData = store.artwork.imageData,
+               let uiImage = UIImage(data: imageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipped()
+            } else {
+                // Artwork pattern (same as card)
+                artworkPattern
+            }
             
             // AI badge
             VStack {

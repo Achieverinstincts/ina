@@ -98,6 +98,12 @@ struct InsightsTabView: View {
                 if store.monthlyStory != nil {
                     monthlyStoryCard
                         .padding(.horizontal, 16)
+                } else if store.isGeneratingStory {
+                    storyGeneratingCard
+                        .padding(.horizontal, 16)
+                } else if !store.isLoading {
+                    generateStoryCard
+                        .padding(.horizontal, 16)
                 }
                 
                 Spacer(minLength: 100)
@@ -353,6 +359,96 @@ struct InsightsTabView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+    
+    // MARK: - Story Generating Card
+    
+    private var storyGeneratingCard: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.minaAI)
+                
+                Text("Monthly Story")
+                    .font(.minaHeadline)
+                    .foregroundStyle(Color.minaPrimary)
+                
+                Spacer()
+            }
+            
+            HStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.9)
+                
+                Text("Generating your story...")
+                    .font(.minaSubheadline)
+                    .foregroundStyle(Color.minaSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [Color.minaAI.opacity(0.1), Color.minaAI.opacity(0.05)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.minaAI.opacity(0.2), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Generate Story Card
+    
+    private var generateStoryCard: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.minaAI)
+                
+                Text("Monthly Story")
+                    .font(.minaHeadline)
+                    .foregroundStyle(Color.minaPrimary)
+                
+                Spacer()
+            }
+            
+            if let error = store.storyGenerationError {
+                Text(error)
+                    .font(.minaCaption1)
+                    .foregroundStyle(Color.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            Button {
+                store.send(.generateNewStory)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 14))
+                    Text("Generate Story")
+                        .font(.minaSubheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.minaAI)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(20)
+        .background(Color.minaCardSolid)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.minaAI.opacity(0.2), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
