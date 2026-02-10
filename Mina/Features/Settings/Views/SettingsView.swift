@@ -85,6 +85,13 @@ struct SettingsView: View {
         } message: {
             Text("This will permanently delete all your journal entries and data. This action cannot be undone.")
         }
+        .sheet(isPresented: Binding(
+            get: { store.showingFeedback },
+            set: { if !$0 { store.send(.dismissFeedback) } }
+        )) {
+            FeedbackSheet(store: store)
+                .presentationDetents([.medium, .large])
+        }
     }
     
     // MARK: - App Header
@@ -318,6 +325,15 @@ struct SettingsView: View {
             ) {
                 store.send(.helpAndSupportTapped)
             }
+            
+            SettingsRow(
+                icon: "envelope.fill",
+                iconColor: .minaAccent,
+                title: "Send Feedback",
+                subtitle: "Help us improve Mina"
+            ) {
+                store.send(.sendFeedbackTapped)
+            }
         }
     }
     
@@ -491,6 +507,151 @@ struct TimePickerSheet: View {
             Spacer()
         }
         .background(Color.minaBackground)
+    }
+}
+
+// MARK: - Feedback Sheet
+
+struct FeedbackSheet: View {
+    @Bindable var store: StoreOf<SettingsFeature>
+    @FocusState private var isMessageFocused: Bool
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Category Picker
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("CATEGORY")
+                            .font(.minaCaption)
+                            .foregroundStyle(Color.minaSecondary)
+                            .padding(.horizontal, 4)
+                        
+                        VStack(spacing: 0) {
+                            ForEach(SettingsFeature.FeedbackCategory.allCases) { category in
+                                Button {
+                                    store.send(.feedbackCategoryChanged(category))
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: category.icon)
+                                            .font(.system(size: 18))
+                                            .foregroundStyle(store.feedbackCategory == category ? Color.minaAccent : Color.minaSecondary)
+                                            .frame(width: 28, height: 28)
+                                        
+                                        Text(category.rawValue)
+                                            .font(.minaBody)
+                                            .foregroundStyle(Color.minaPrimary)
+                                        
+                                        Spacer()
+                                        
+                                        if store.feedbackCategory == category {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(Color.minaAccent)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                
+                                if category != SettingsFeature.FeedbackCategory.allCases.last {
+                                    Divider()
+                                        .padding(.leading, 56)
+                                }
+                            }
+                        }
+                        .background(Color.minaCardSolid)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    
+                    // Message Input
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("MESSAGE")
+                            .font(.minaCaption)
+                            .foregroundStyle(Color.minaSecondary)
+                            .padding(.horizontal, 4)
+                        
+                        TextEditor(text: Binding(
+                            get: { store.feedbackMessage },
+                            set: { store.send(.feedbackMessageChanged($0)) }
+                        ))
+                        .focused($isMessageFocused)
+                        .font(.minaBody)
+                        .foregroundStyle(Color.minaPrimary)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 150)
+                        .padding(12)
+                        .background(Color.minaCardSolid)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(alignment: .topLeading) {
+                            if store.feedbackMessage.isEmpty {
+                                Text("Tell us what's on your mind...")
+                                    .font(.minaBody)
+                                    .foregroundStyle(Color.minaTertiary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 20)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    
+                    // Submit Button
+                    Button {
+                        store.send(.submitFeedbackTapped)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "paperplane.fill")
+                            Text("Send Feedback")
+                        }
+                        .font(.minaHeadline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            store.feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? Color.minaSecondary
+                                : Color.minaAccent
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(store.feedbackMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    
+                    // Success message
+                    if store.feedbackSubmitted {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.green)
+                            Text("Thank you for your feedback!")
+                                .font(.minaSubheadline)
+                                .foregroundStyle(Color.minaSecondary)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+            }
+            .background(Color.minaBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { store.send(.dismissFeedback) }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Send Feedback")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+            }
+        }
     }
 }
 

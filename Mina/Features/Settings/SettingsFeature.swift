@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import ComposableArchitecture
 
 // MARK: - Settings Feature
@@ -41,6 +42,12 @@ struct SettingsFeature {
         var showingExportOptions: Bool = false
         var showingClearDataConfirmation: Bool = false
         var showingTimePicker: Bool = false
+        var showingFeedback: Bool = false
+        
+        /// Feedback
+        var feedbackCategory: FeedbackCategory = .general
+        var feedbackMessage: String = ""
+        var feedbackSubmitted: Bool = false
     }
     
     // MARK: - Subscription Status
@@ -57,6 +64,26 @@ struct SettingsFeature {
             case .free: return "star"
             case .premium: return "star.fill"
             case .premiumPlus: return "star.circle.fill"
+            }
+        }
+    }
+    
+    // MARK: - Feedback Category
+    
+    enum FeedbackCategory: String, CaseIterable, Equatable, Identifiable {
+        case general = "General Feedback"
+        case bugReport = "Bug Report"
+        case featureRequest = "Feature Request"
+        case other = "Other"
+        
+        var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .general: return "bubble.left.fill"
+            case .bugReport: return "ladybug.fill"
+            case .featureRequest: return "lightbulb.fill"
+            case .other: return "ellipsis.circle.fill"
             }
         }
     }
@@ -103,6 +130,13 @@ struct SettingsFeature {
         case termsOfServiceTapped
         case privacyPolicyTapped
         case helpAndSupportTapped
+        
+        // Feedback
+        case sendFeedbackTapped
+        case feedbackCategoryChanged(FeedbackCategory)
+        case feedbackMessageChanged(String)
+        case submitFeedbackTapped
+        case dismissFeedback
         
         // Navigation
         case dismissSettings
@@ -265,6 +299,55 @@ struct SettingsFeature {
                         await openURL(url)
                     }
                 }
+                
+            // MARK: Feedback
+                
+            case .sendFeedbackTapped:
+                state.showingFeedback = true
+                state.feedbackCategory = .general
+                state.feedbackMessage = ""
+                state.feedbackSubmitted = false
+                return .none
+                
+            case let .feedbackCategoryChanged(category):
+                state.feedbackCategory = category
+                return .none
+                
+            case let .feedbackMessageChanged(message):
+                state.feedbackMessage = message
+                return .none
+                
+            case .submitFeedbackTapped:
+                let category = state.feedbackCategory.rawValue
+                let message = state.feedbackMessage
+                let version = state.appVersion
+                let build = state.buildNumber
+                state.feedbackSubmitted = true
+                
+                return .run { _ in
+                    let subject = "Mina Feedback: \(category)"
+                    let body = """
+                    \(message)
+                    
+                    ---
+                    App Version: \(version) (\(build))
+                    Device: \(await UIDevice.current.model)
+                    iOS: \(await UIDevice.current.systemVersion)
+                    """
+                    
+                    let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    
+                    if let url = URL(string: "mailto:feedback@mina.app?subject=\(encodedSubject)&body=\(encodedBody)") {
+                        await openURL(url)
+                    }
+                }
+                
+            case .dismissFeedback:
+                state.showingFeedback = false
+                state.feedbackMessage = ""
+                state.feedbackSubmitted = false
+                return .none
                 
             case .dismissSettings:
                 return .none
