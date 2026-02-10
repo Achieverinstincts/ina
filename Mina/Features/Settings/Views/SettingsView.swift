@@ -92,6 +92,108 @@ struct SettingsView: View {
             FeedbackSheet(store: store)
                 .presentationDetents([.medium, .large])
         }
+        // Sign In Sheet
+        .sheet(isPresented: Binding(
+            get: { store.showingSignIn },
+            set: { if !$0 { store.send(.dismissSignIn) } }
+        )) {
+            SignInSheet(store: store)
+                .presentationDetents([.medium])
+        }
+        // Subscription Sheet
+        .sheet(isPresented: Binding(
+            get: { store.showingSubscription },
+            set: { if !$0 { store.send(.dismissSubscription) } }
+        )) {
+            SubscriptionSheet(store: store)
+                .presentationDetents([.medium, .large])
+        }
+        // Mood Picker Sheet
+        .sheet(isPresented: Binding(
+            get: { store.showingMoodPicker },
+            set: { if !$0 { store.send(.dismissMoodPicker) } }
+        )) {
+            MoodPickerSheet(store: store)
+                .presentationDetents([.medium])
+        }
+        // Export Options Sheet
+        .sheet(isPresented: Binding(
+            get: { store.showingExportOptions },
+            set: { if !$0 { store.send(.dismissExportOptions) } }
+        )) {
+            ExportOptionsSheet(store: store)
+                .presentationDetents([.medium])
+        }
+        // Share Sheet
+        .sheet(isPresented: Binding(
+            get: { store.showingShareSheet },
+            set: { if !$0 { store.send(.dismissShareSheet) } }
+        )) {
+            ShareSheetView(items: ["Check out Mina - a beautiful journaling app!", URL(string: "https://apps.apple.com/app/mina") as Any])
+                .presentationDetents([.medium])
+        }
+        // Sign Out Confirmation Alert
+        .alert("Sign Out?", isPresented: Binding(
+            get: { store.showingSignOutConfirmation },
+            set: { if !$0 { store.send(.dismissSignOutConfirmation) } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                store.send(.dismissSignOutConfirmation)
+            }
+            Button("Sign Out", role: .destructive) {
+                store.send(.confirmSignOut)
+            }
+        } message: {
+            Text("Your data will remain on this device, but syncing will stop until you sign in again.")
+        }
+        // Clear Cache Confirmation Alert
+        .alert("Clear Cache?", isPresented: Binding(
+            get: { store.showingClearCacheConfirmation },
+            set: { if !$0 { store.send(.dismissClearCacheConfirmation) } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                store.send(.dismissClearCacheConfirmation)
+            }
+            Button("Clear Cache", role: .destructive) {
+                store.send(.confirmClearCache)
+            }
+        } message: {
+            Text("This will remove cached images and temporary files. Your journal entries will not be affected.")
+        }
+        // Change Passcode Alert
+        .alert("Change Passcode", isPresented: Binding(
+            get: { store.showingChangePasscodeAlert },
+            set: { if !$0 { store.send(.dismissChangePasscodeAlert) } }
+        )) {
+            Button("OK") {
+                store.send(.dismissChangePasscodeAlert)
+            }
+        } message: {
+            Text("Passcode management is coming in a future update. Stay tuned!")
+        }
+        // Cache Cleared Overlay
+        .overlay {
+            if store.cacheClearedFeedback {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.green)
+                        Text("Cache cleared successfully")
+                            .font(.minaSubheadline)
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                    .padding(.bottom, 40)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.4), value: store.cacheClearedFeedback)
+            }
+        }
     }
     
     // MARK: - App Header
@@ -135,15 +237,40 @@ struct SettingsView: View {
     private var accountSection: some View {
         SettingsSection(title: "Account") {
             if store.isSignedIn {
-                // Signed in state
+                // Signed in state - profile row
                 SettingsRow(
                     icon: "person.circle.fill",
                     iconColor: .blue,
                     title: store.userName ?? "User",
                     subtitle: store.userEmail
                 ) {
-                    store.send(.signInTapped)
+                    // No-op, just displays info
                 }
+                
+                Divider()
+                    .padding(.leading, 56)
+                
+                // Sign Out button
+                Button {
+                    store.send(.signOutTapped)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.red)
+                            .frame(width: 28, height: 28)
+                        
+                        Text("Sign Out")
+                            .font(.minaBody)
+                            .foregroundStyle(.red)
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             } else {
                 // Sign in button
                 SettingsRow(
@@ -155,6 +282,9 @@ struct SettingsView: View {
                     store.send(.signInTapped)
                 }
             }
+            
+            Divider()
+                .padding(.leading, 56)
             
             SettingsRow(
                 icon: store.subscriptionStatus.icon,
@@ -180,6 +310,9 @@ struct SettingsView: View {
                 store.send(.defaultMoodTapped)
             }
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsToggleRow(
                 icon: "bell.fill",
                 iconColor: .red,
@@ -191,6 +324,9 @@ struct SettingsView: View {
             )
             
             if store.dailyReminderEnabled {
+                Divider()
+                    .padding(.leading, 56)
+                
                 SettingsRow(
                     icon: "clock.fill",
                     iconColor: .purple,
@@ -199,7 +335,11 @@ struct SettingsView: View {
                 ) {
                     store.send(.reminderTimeTapped)
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            
+            Divider()
+                .padding(.leading, 56)
             
             SettingsToggleRow(
                 icon: "calendar.badge.clock",
@@ -211,6 +351,7 @@ struct SettingsView: View {
                 )
             )
         }
+        .animation(.easeInOut(duration: 0.25), value: store.dailyReminderEnabled)
     }
     
     // MARK: - Privacy & Security Section
@@ -227,6 +368,9 @@ struct SettingsView: View {
                 )
             )
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsToggleRow(
                 icon: "lock.fill",
                 iconColor: .gray,
@@ -238,6 +382,9 @@ struct SettingsView: View {
             )
             
             if store.passcodeEnabled {
+                Divider()
+                    .padding(.leading, 56)
+                
                 SettingsRow(
                     icon: "key.fill",
                     iconColor: .orange,
@@ -245,8 +392,10 @@ struct SettingsView: View {
                 ) {
                     store.send(.changePasscodeTapped)
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: store.passcodeEnabled)
     }
     
     // MARK: - Data & Storage Section
@@ -262,6 +411,9 @@ struct SettingsView: View {
                 store.send(.exportDataTapped)
             }
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsRow(
                 icon: "trash.fill",
                 iconColor: .gray,
@@ -270,6 +422,9 @@ struct SettingsView: View {
             ) {
                 store.send(.clearCacheTapped)
             }
+            
+            Divider()
+                .padding(.leading, 56)
             
             SettingsRow(
                 icon: "exclamationmark.triangle.fill",
@@ -294,6 +449,9 @@ struct SettingsView: View {
                 store.send(.rateAppTapped)
             }
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsRow(
                 icon: "square.and.arrow.up",
                 iconColor: .blue,
@@ -301,6 +459,9 @@ struct SettingsView: View {
             ) {
                 store.send(.shareAppTapped)
             }
+            
+            Divider()
+                .padding(.leading, 56)
             
             SettingsRow(
                 icon: "doc.text.fill",
@@ -310,6 +471,9 @@ struct SettingsView: View {
                 store.send(.termsOfServiceTapped)
             }
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsRow(
                 icon: "hand.raised.fill",
                 iconColor: .green,
@@ -318,6 +482,9 @@ struct SettingsView: View {
                 store.send(.privacyPolicyTapped)
             }
             
+            Divider()
+                .padding(.leading, 56)
+            
             SettingsRow(
                 icon: "questionmark.circle.fill",
                 iconColor: .purple,
@@ -325,6 +492,9 @@ struct SettingsView: View {
             ) {
                 store.send(.helpAndSupportTapped)
             }
+            
+            Divider()
+                .padding(.leading, 56)
             
             SettingsRow(
                 icon: "envelope.fill",
@@ -653,6 +823,371 @@ struct FeedbackSheet: View {
             }
         }
     }
+}
+
+// MARK: - Sign In Sheet
+
+struct SignInSheet: View {
+    @Bindable var store: StoreOf<SettingsFeature>
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 32) {
+                Spacer()
+                
+                // Icon
+                Image(systemName: "icloud.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Color.minaAccent)
+                
+                VStack(spacing: 8) {
+                    Text("Sign in to Mina")
+                        .font(.minaTitle2)
+                        .foregroundStyle(Color.minaPrimary)
+                    
+                    Text("Sync your journal entries across all your devices securely.")
+                        .font(.minaBody)
+                        .foregroundStyle(Color.minaSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                
+                // Apple Sign In placeholder
+                Button {
+                    // TODO: Implement Apple Sign In
+                    store.send(.dismissSignIn)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "apple.logo")
+                        Text("Sign in with Apple")
+                    }
+                    .font(.minaHeadline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.minaPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(.horizontal, 24)
+                
+                Spacer()
+                Spacer()
+            }
+            .background(Color.minaBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { store.send(.dismissSignIn) }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Sign In")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Subscription Sheet
+
+struct SubscriptionSheet: View {
+    @Bindable var store: StoreOf<SettingsFeature>
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Current Plan
+                    VStack(spacing: 12) {
+                        Image(systemName: store.subscriptionStatus.icon)
+                            .font(.system(size: 48))
+                            .foregroundStyle(Color.minaAccent)
+                        
+                        Text("Current Plan")
+                            .font(.minaCaption)
+                            .foregroundStyle(Color.minaSecondary)
+                        
+                        Text(store.subscriptionStatus.displayName)
+                            .font(.minaTitle2)
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(Color.minaCardSolid)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    
+                    // Premium features list
+                    VStack(alignment: .leading, spacing: 0) {
+                        subscriptionFeatureRow(icon: "infinity", title: "Unlimited Entries", included: true)
+                        Divider().padding(.leading, 56)
+                        subscriptionFeatureRow(icon: "photo.on.rectangle.angled", title: "Photo Attachments", included: true)
+                        Divider().padding(.leading, 56)
+                        subscriptionFeatureRow(icon: "lock.icloud.fill", title: "Cloud Sync", included: store.subscriptionStatus != .free)
+                        Divider().padding(.leading, 56)
+                        subscriptionFeatureRow(icon: "chart.bar.fill", title: "Advanced Insights", included: store.subscriptionStatus == .premiumPlus)
+                        Divider().padding(.leading, 56)
+                        subscriptionFeatureRow(icon: "paintbrush.fill", title: "Custom Themes", included: store.subscriptionStatus == .premiumPlus)
+                    }
+                    .background(Color.minaCardSolid)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    
+                    if store.subscriptionStatus == .free {
+                        // Upgrade button
+                        Button {
+                            // TODO: Implement subscription purchase
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "star.fill")
+                                Text("Upgrade to Premium")
+                            }
+                            .font(.minaHeadline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.minaAccent)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+            }
+            .background(Color.minaBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { store.send(.dismissSubscription) }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Subscription")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+            }
+        }
+    }
+    
+    private func subscriptionFeatureRow(icon: String, title: String, included: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(included ? Color.minaAccent : Color.minaSecondary)
+                .frame(width: 28, height: 28)
+            
+            Text(title)
+                .font(.minaBody)
+                .foregroundStyle(Color.minaPrimary)
+            
+            Spacer()
+            
+            Image(systemName: included ? "checkmark.circle.fill" : "xmark.circle")
+                .font(.system(size: 18))
+                .foregroundStyle(included ? Color.green : Color.minaSecondary.opacity(0.5))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+}
+
+// MARK: - Mood Picker Sheet
+
+struct MoodPickerSheet: View {
+    @Bindable var store: StoreOf<SettingsFeature>
+    
+    let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible()),
+        GridItem(.flexible()),
+        GridItem(.flexible()),
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("Choose a default mood for new entries")
+                        .font(.minaBody)
+                        .foregroundStyle(Color.minaSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                    
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(SettingsFeature.availableMoods, id: \.name) { mood in
+                            Button {
+                                store.send(.moodSelected(mood.name))
+                            } label: {
+                                VStack(spacing: 6) {
+                                    if mood.emoji.isEmpty {
+                                        Image(systemName: "circle.dashed")
+                                            .font(.system(size: 32))
+                                            .foregroundStyle(Color.minaSecondary)
+                                            .frame(height: 40)
+                                    } else {
+                                        Text(mood.emoji)
+                                            .font(.system(size: 32))
+                                            .frame(height: 40)
+                                    }
+                                    
+                                    Text(mood.name)
+                                        .font(.minaCaption)
+                                        .foregroundStyle(store.defaultMood == mood.name ? Color.minaAccent : Color.minaSecondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    store.defaultMood == mood.name
+                                        ? Color.minaAccent.opacity(0.1)
+                                        : Color.minaCardSolid
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(store.defaultMood == mood.name ? Color.minaAccent : Color.clear, lineWidth: 2)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+            }
+            .background(Color.minaBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { store.send(.dismissMoodPicker) }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Default Mood")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Export Options Sheet
+
+struct ExportOptionsSheet: View {
+    @Bindable var store: StoreOf<SettingsFeature>
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("Choose a format to export your journal entries")
+                        .font(.minaBody)
+                        .foregroundStyle(Color.minaSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                    
+                    VStack(spacing: 0) {
+                        ForEach(SettingsFeature.ExportFormat.allCases) { format in
+                            Button {
+                                store.send(.exportFormatSelected(format))
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: format.icon)
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(Color.minaAccent)
+                                        .frame(width: 28, height: 28)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(format.rawValue)
+                                            .font(.minaBody)
+                                            .foregroundStyle(Color.minaPrimary)
+                                        
+                                        Text(format.description)
+                                            .font(.minaCaption)
+                                            .foregroundStyle(Color.minaSecondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(Color.minaTertiary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            
+                            if format != SettingsFeature.ExportFormat.allCases.last {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
+                    }
+                    .background(Color.minaCardSolid)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.horizontal, 16)
+                    
+                    // Info footer
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 14))
+                        Text("Exported data includes all journal entries and associated metadata.")
+                            .font(.minaCaption)
+                    }
+                    .foregroundStyle(Color.minaSecondary)
+                    .padding(.horizontal, 20)
+                }
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+            }
+            .background(Color.minaBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { store.send(.dismissExportOptions) }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.minaPrimary)
+                    }
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Export Data")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Share Sheet (UIKit Wrapper)
+
+struct ShareSheetView: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Preview

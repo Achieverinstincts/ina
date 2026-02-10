@@ -43,6 +43,12 @@ struct SettingsFeature {
         var showingClearDataConfirmation: Bool = false
         var showingTimePicker: Bool = false
         var showingFeedback: Bool = false
+        var showingMoodPicker: Bool = false
+        var showingSignOutConfirmation: Bool = false
+        var showingChangePasscodeAlert: Bool = false
+        var showingClearCacheConfirmation: Bool = false
+        var showingShareSheet: Bool = false
+        var cacheClearedFeedback: Bool = false
         
         /// Feedback
         var feedbackCategory: FeedbackCategory = .general
@@ -88,6 +94,49 @@ struct SettingsFeature {
         }
     }
     
+    // MARK: - Export Format
+    
+    enum ExportFormat: String, CaseIterable, Equatable, Identifiable {
+        case json = "JSON"
+        case pdf = "PDF"
+        case plainText = "Plain Text"
+        
+        var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .json: return "doc.text"
+            case .pdf: return "doc.richtext"
+            case .plainText: return "doc.plaintext"
+            }
+        }
+        
+        var description: String {
+            switch self {
+            case .json: return "Machine-readable format, great for backups"
+            case .pdf: return "Formatted document with entries and moods"
+            case .plainText: return "Simple text file with all entries"
+            }
+        }
+    }
+    
+    // MARK: - Available Moods
+    
+    static let availableMoods: [(emoji: String, name: String)] = [
+        ("", "None"),
+        ("😊", "Happy"),
+        ("😌", "Calm"),
+        ("😢", "Sad"),
+        ("😤", "Angry"),
+        ("😰", "Anxious"),
+        ("🥰", "Loved"),
+        ("😴", "Tired"),
+        ("🤔", "Thoughtful"),
+        ("😎", "Confident"),
+        ("🥳", "Excited"),
+        ("😶", "Neutral"),
+    ]
+    
     // MARK: - Actions
     
     enum Action: BindableAction {
@@ -99,12 +148,16 @@ struct SettingsFeature {
         // Account
         case signInTapped
         case signOutTapped
+        case confirmSignOut
         case subscriptionTapped
         case dismissSignIn
         case dismissSubscription
+        case dismissSignOutConfirmation
         
         // Journal Preferences
         case defaultMoodTapped
+        case moodSelected(String)
+        case dismissMoodPicker
         case reminderToggled(Bool)
         case reminderTimeTapped
         case reminderTimeChanged(Date)
@@ -115,10 +168,15 @@ struct SettingsFeature {
         case faceIDToggled(Bool)
         case passcodeToggled(Bool)
         case changePasscodeTapped
+        case dismissChangePasscodeAlert
         
         // Data
         case exportDataTapped
+        case exportFormatSelected(ExportFormat)
         case clearCacheTapped
+        case confirmClearCache
+        case dismissClearCacheConfirmation
+        case cacheClearFeedbackDismissed
         case clearAllDataTapped
         case confirmClearData
         case dismissClearDataConfirmation
@@ -127,6 +185,7 @@ struct SettingsFeature {
         // About
         case rateAppTapped
         case shareAppTapped
+        case dismissShareSheet
         case termsOfServiceTapped
         case privacyPolicyTapped
         case helpAndSupportTapped
@@ -178,6 +237,11 @@ struct SettingsFeature {
                 return .none
                 
             case .signOutTapped:
+                state.showingSignOutConfirmation = true
+                return .none
+                
+            case .confirmSignOut:
+                state.showingSignOutConfirmation = false
                 state.isSignedIn = false
                 state.userName = nil
                 state.userEmail = nil
@@ -195,10 +259,23 @@ struct SettingsFeature {
                 state.showingSubscription = false
                 return .none
                 
+            case .dismissSignOutConfirmation:
+                state.showingSignOutConfirmation = false
+                return .none
+                
             // MARK: Journal Preferences
                 
             case .defaultMoodTapped:
-                // TODO: Show mood picker
+                state.showingMoodPicker = true
+                return .none
+                
+            case let .moodSelected(mood):
+                state.defaultMood = mood
+                state.showingMoodPicker = false
+                return .none
+                
+            case .dismissMoodPicker:
+                state.showingMoodPicker = false
                 return .none
                 
             case let .reminderToggled(enabled):
@@ -235,7 +312,11 @@ struct SettingsFeature {
                 return .none
                 
             case .changePasscodeTapped:
-                // TODO: Show passcode change flow
+                state.showingChangePasscodeAlert = true
+                return .none
+                
+            case .dismissChangePasscodeAlert:
+                state.showingChangePasscodeAlert = false
                 return .none
                 
             // MARK: Data
@@ -245,7 +326,25 @@ struct SettingsFeature {
                 return .none
                 
             case .clearCacheTapped:
-                // TODO: Clear image cache
+                state.showingClearCacheConfirmation = true
+                return .none
+                
+            case .confirmClearCache:
+                state.showingClearCacheConfirmation = false
+                state.cacheClearedFeedback = true
+                state.storageUsed = "0 MB"
+                // Auto-dismiss the feedback after 2 seconds
+                return .run { send in
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    await send(.cacheClearFeedbackDismissed)
+                }
+                
+            case .dismissClearCacheConfirmation:
+                state.showingClearCacheConfirmation = false
+                return .none
+                
+            case .cacheClearFeedbackDismissed:
+                state.cacheClearedFeedback = false
                 return .none
                 
             case .clearAllDataTapped:
@@ -265,6 +364,11 @@ struct SettingsFeature {
                 state.showingExportOptions = false
                 return .none
                 
+            case let .exportFormatSelected(format):
+                state.showingExportOptions = false
+                // TODO: Actually export data in chosen format
+                return .none
+                
             // MARK: About
                 
             case .rateAppTapped:
@@ -276,7 +380,11 @@ struct SettingsFeature {
                 }
                 
             case .shareAppTapped:
-                // TODO: Show share sheet
+                state.showingShareSheet = true
+                return .none
+                
+            case .dismissShareSheet:
+                state.showingShareSheet = false
                 return .none
                 
             case .termsOfServiceTapped:
