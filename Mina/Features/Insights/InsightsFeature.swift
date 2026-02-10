@@ -2,7 +2,7 @@ import Foundation
 import ComposableArchitecture
 
 // MARK: - Insights Feature Reducer
-// Manages journaling insights, stats, and monthly stories
+// Manages journaling insights with real data, AI analysis, mood calendar, and behaviour patterns
 
 @Reducer
 struct InsightsFeature {
@@ -12,46 +12,70 @@ struct InsightsFeature {
     @ObservableState
     struct State: Equatable {
         /// Current time period for insights
-        var selectedPeriod: InsightPeriod = .week
+        var selectedPeriod: InsightPeriod = .month
         
         /// Whether data is loading
         var isLoading: Bool = false
         
-        /// Mood data points
+        /// Whether this is the first load (show full-screen loader)
+        var hasLoadedOnce: Bool = false
+        
+        /// Error message if data load failed
+        var errorMessage: String? = nil
+        
+        // MARK: - Mood Data
+        
+        /// Mood data points for the selected period
         var moodData: [MoodDataPoint] = []
         
-        /// Entry stats
+        /// Mood distribution (count per mood type)
+        var moodDistribution: [MoodDistribution] = []
+        
+        /// Calendar mood map: date string ("yyyy-MM-dd") -> mood
+        var moodCalendar: [String: CalendarDayData] = [:]
+        
+        /// Currently displayed calendar month
+        var calendarMonth: Date = Date()
+        
+        // MARK: - Stats
+        
+        /// Core journal stats
         var stats: JournalStats = JournalStats()
-        
-        /// Monthly story (AI-generated summary)
-        var monthlyStory: MonthlyStory? = nil
-        
-        /// Top topics/themes
-        var topTopics: [TopicStat] = []
         
         /// Streak info
         var streakInfo: StreakInfo = StreakInfo()
         
-        /// Whether AI story generation is in progress
-        var isGeneratingStory: Bool = false
+        /// Top topics/themes from tags
+        var topTopics: [TopicStat] = []
         
-        /// Error from story generation
-        var storyGenerationError: String? = nil
+        /// Writing activity (entries per day for the period)
+        var writingActivity: [ActivityDataPoint] = []
         
-        /// Show story detail
-        @Presents var storyDetail: MonthlyStoryDetailFeature.State?
+        /// Behaviour patterns
+        var behaviourPatterns: BehaviourPatterns = BehaviourPatterns()
         
-        /// Shareable text generated from current insights
+        // MARK: - AI Analysis
+        
+        /// AI-generated overall analysis
+        var aiAnalysis: AIAnalysis? = nil
+        
+        /// Whether AI analysis is being generated
+        var isGeneratingAnalysis: Bool = false
+        
+        /// Error from AI analysis generation
+        var analysisError: String? = nil
+        
+        // MARK: - Sharing
+        
+        /// Shareable text
         var shareText: String? = nil
-        
-        /// Whether the share sheet is being presented
         var isShowingShareSheet: Bool = false
         
-        /// Exported JSON data URL for sharing
+        /// Export data URL
         var exportedDataURL: URL? = nil
-        
-        /// Whether the export share sheet is being presented
         var isShowingExportSheet: Bool = false
+        
+        // MARK: - Computed
         
         /// Average mood for selected period
         var averageMood: Double {
@@ -59,66 +83,123 @@ struct InsightsFeature {
             return moodData.reduce(0) { $0 + $1.value } / Double(moodData.count)
         }
         
-        /// Mood trend description
+        /// Mood trend label
         var moodTrend: String {
             let avg = averageMood
             if avg >= 4.5 { return "Excellent" }
             else if avg >= 3.5 { return "Good" }
             else if avg >= 2.5 { return "Neutral" }
             else if avg >= 1.5 { return "Low" }
-            else { return "Challenging" }
+            else if avg > 0 { return "Challenging" }
+            else { return "No Data" }
         }
         
-        /// Mood trend color
+        /// Mood trend color hex
         var moodTrendColor: String {
             let avg = averageMood
-            if avg >= 4.0 { return "34C759" } // Green
-            else if avg >= 3.0 { return "FF9500" } // Orange
-            else { return "FF3B30" } // Red
+            if avg >= 4.0 { return "34C759" }
+            else if avg >= 3.0 { return "FF9500" }
+            else if avg > 0 { return "FF3B30" }
+            else { return "8E8E93" }
+        }
+        
+        /// Mood trend direction compared to previous period
+        var moodTrendDirection: TrendDirection {
+            guard moodData.count >= 4 else { return .stable }
+            let half = moodData.count / 2
+            let firstHalf = moodData.prefix(half)
+            let secondHalf = moodData.suffix(half)
+            let firstAvg = firstHalf.reduce(0.0) { $0 + $1.value } / Double(firstHalf.count)
+            let secondAvg = secondHalf.reduce(0.0) { $0 + $1.value } / Double(secondHalf.count)
+            let diff = secondAvg - firstAvg
+            if diff > 0.3 { return .improving }
+            else if diff < -0.3 { return .declining }
+            else { return .stable }
         }
     }
     
-    // MARK: - Period
+    // MARK: - Enums & Data Types
+    
+    enum TrendDirection: String, Equatable {
+        case improving
+        case declining
+        case stable
+        
+        var label: String {
+            switch self {
+            case .improving: return "Improving"
+            case .declining: return "Declining"
+            case .stable: return "Stable"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .improving: return "arrow.up.right"
+            case .declining: return "arrow.down.right"
+            case .stable: return "arrow.right"
+            }
+        }
+        
+        var colorHex: String {
+            switch self {
+            case .improving: return "34C759"
+            case .declining: return "FF3B30"
+            case .stable: return "FF9500"
+            }
+        }
+    }
     
     enum InsightPeriod: String, CaseIterable, Identifiable, Equatable {
         case week
         case month
+        case threeMonths
         case year
-        case allTime
         
         var id: String { rawValue }
         
         var label: String {
             switch self {
-            case .week: return "Week"
-            case .month: return "Month"
-            case .year: return "Year"
-            case .allTime: return "All Time"
+            case .week: return "7D"
+            case .month: return "30D"
+            case .threeMonths: return "90D"
+            case .year: return "1Y"
+            }
+        }
+        
+        var fullLabel: String {
+            switch self {
+            case .week: return "Past 7 Days"
+            case .month: return "Past 30 Days"
+            case .threeMonths: return "Past 90 Days"
+            case .year: return "Past Year"
             }
         }
         
         var dateRange: (start: Date, end: Date) {
             let now = Date()
             let calendar = Calendar.current
-            
             switch self {
             case .week:
-                let start = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-                return (start, now)
+                return (calendar.date(byAdding: .day, value: -7, to: now) ?? now, now)
             case .month:
-                let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
-                return (start, now)
+                return (calendar.date(byAdding: .day, value: -30, to: now) ?? now, now)
+            case .threeMonths:
+                return (calendar.date(byAdding: .day, value: -90, to: now) ?? now, now)
             case .year:
-                let start = calendar.date(byAdding: .year, value: -1, to: now) ?? now
-                return (start, now)
-            case .allTime:
-                let start = calendar.date(byAdding: .year, value: -10, to: now) ?? now
-                return (start, now)
+                return (calendar.date(byAdding: .year, value: -1, to: now) ?? now, now)
+            }
+        }
+        
+        var dayCount: Int {
+            switch self {
+            case .week: return 7
+            case .month: return 30
+            case .threeMonths: return 90
+            case .year: return 365
             }
         }
     }
-    
-    // MARK: - Data Types
     
     struct MoodDataPoint: Equatable, Identifiable {
         let id: UUID
@@ -133,14 +214,41 @@ struct InsightsFeature {
         }
     }
     
+    struct MoodDistribution: Equatable, Identifiable {
+        let id: UUID
+        let mood: Mood
+        var count: Int
+        var percentage: Double
+    }
+    
+    struct CalendarDayData: Equatable {
+        let date: Date
+        let mood: Mood?
+        let entryCount: Int
+        let averageMood: Double
+    }
+    
+    struct ActivityDataPoint: Equatable, Identifiable {
+        let id: UUID
+        let date: Date
+        let entryCount: Int
+        let wordCount: Int
+        
+        var dayLabel: String {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEE"
+            return formatter.string(from: date)
+        }
+    }
+    
     struct JournalStats: Equatable {
         var totalEntries: Int = 0
         var totalWords: Int = 0
         var averageWordsPerEntry: Int = 0
         var entriesThisPeriod: Int = 0
         var longestEntry: Int = 0
-        var mostProductiveDay: String = "Monday"
-        var mostProductiveTime: String = "Morning"
+        var shortestEntry: Int = 0
+        var entriesWithMood: Int = 0
     }
     
     struct TopicStat: Equatable, Identifiable {
@@ -162,14 +270,24 @@ struct InsightsFeature {
         }
     }
     
-    struct MonthlyStory: Equatable, Identifiable {
+    struct BehaviourPatterns: Equatable {
+        var mostProductiveDay: String = "-"
+        var mostProductiveTime: String = "-"
+        var averageEntriesPerDay: Double = 0
+        var bestMoodDay: String = "-"
+        var worstMoodDay: String = "-"
+        /// Entries per day-of-week (Mon=0..Sun=6)
+        var dayOfWeekDistribution: [Int] = Array(repeating: 0, count: 7)
+        /// Entries per hour bucket (Morning/Afternoon/Evening/Night)
+        var timeOfDayDistribution: [Int] = Array(repeating: 0, count: 4)
+    }
+    
+    struct AIAnalysis: Equatable, Identifiable {
         let id: UUID
-        let month: String
-        let year: Int
         let summary: String
-        let highlights: [String]
-        let moodSummary: String
-        let topThemes: [String]
+        let moodInsight: String
+        let patterns: [String]
+        let suggestions: [String]
         let generatedAt: Date
     }
     
@@ -184,17 +302,18 @@ struct InsightsFeature {
         
         /// Data loading
         case periodChanged(InsightPeriod)
-        case dataLoaded(moodData: [MoodDataPoint], stats: JournalStats, topics: [TopicStat])
-        case streakLoaded(StreakInfo)
-        case storyLoaded(MonthlyStory?)
+        case dataLoaded(InsightsData)
         case loadFailed(String)
         
-        /// Story
-        case viewStoryTapped
-        case generateNewStory
-        case storyGenerated(MonthlyStory)
-        case storyGenerationFailed(String)
-        case storyDetail(PresentationAction<MonthlyStoryDetailFeature.Action>)
+        /// Calendar navigation
+        case previousMonth
+        case nextMonth
+        case calendarMonthChanged(Date)
+        
+        /// AI Analysis
+        case generateAnalysis
+        case analysisGenerated(AIAnalysis)
+        case analysisGenerationFailed(String)
         
         /// Sharing
         case shareInsights
@@ -203,6 +322,18 @@ struct InsightsFeature {
         case dismissExportSheet
         case exportCompleted(URL)
         case exportFailed(String)
+    }
+    
+    /// Bundle of loaded data to send in one action
+    struct InsightsData: Equatable {
+        let moodData: [MoodDataPoint]
+        let moodDistribution: [MoodDistribution]
+        let moodCalendar: [String: CalendarDayData]
+        let stats: JournalStats
+        let streakInfo: StreakInfo
+        let topTopics: [TopicStat]
+        let writingActivity: [ActivityDataPoint]
+        let behaviourPatterns: BehaviourPatterns
     }
     
     // MARK: - Dependencies
@@ -222,169 +353,147 @@ struct InsightsFeature {
                 return .none
                 
             case .onAppear:
+                guard !state.hasLoadedOnce else { return .none }
                 state.isLoading = true
                 return .run { [period = state.selectedPeriod] send in
-                    try await clock.sleep(for: .milliseconds(600))
-                    
-                    // Generate sample data
-                    let moodData = generateSampleMoodData(for: period)
-                    let stats = JournalStats(
-                        totalEntries: 47,
-                        totalWords: 12340,
-                        averageWordsPerEntry: 262,
-                        entriesThisPeriod: period == .week ? 5 : 18,
-                        longestEntry: 1247,
-                        mostProductiveDay: "Sunday",
-                        mostProductiveTime: "Evening"
-                    )
-                    let topics = [
-                        TopicStat(id: UUID(), topic: "Work", count: 15, percentage: 0.32),
-                        TopicStat(id: UUID(), topic: "Health", count: 12, percentage: 0.26),
-                        TopicStat(id: UUID(), topic: "Relationships", count: 9, percentage: 0.19),
-                        TopicStat(id: UUID(), topic: "Personal Growth", count: 7, percentage: 0.15),
-                        TopicStat(id: UUID(), topic: "Creativity", count: 4, percentage: 0.08)
-                    ]
-                    
-                    await send(.dataLoaded(moodData: moodData, stats: stats, topics: topics))
-                    
-                    let streakInfo = StreakInfo(
-                        currentStreak: 7,
-                        longestStreak: 23,
-                        totalDaysJournaled: 47,
-                        lastEntryDate: Date()
-                    )
-                    await send(.streakLoaded(streakInfo))
-                    
-                    // Trigger AI story generation
-                    await send(.generateNewStory)
+                    await send(.periodChanged(period))
                 }
                 
             case .refresh:
-                return .send(.onAppear)
+                state.isLoading = true
+                state.errorMessage = nil
+                return .run { [period = state.selectedPeriod] send in
+                    await send(.periodChanged(period))
+                }
                 
             case let .periodChanged(period):
                 state.selectedPeriod = period
                 state.isLoading = true
+                state.errorMessage = nil
+                
                 return .run { send in
-                    try await clock.sleep(for: .milliseconds(400))
-                    
-                    let moodData = generateSampleMoodData(for: period)
-                    let entriesCount = period == .week ? 5 : (period == .month ? 18 : 47)
-                    let stats = JournalStats(
-                        totalEntries: 47,
-                        totalWords: 12340,
-                        averageWordsPerEntry: 262,
-                        entriesThisPeriod: entriesCount,
-                        longestEntry: 1247,
-                        mostProductiveDay: "Sunday",
-                        mostProductiveTime: "Evening"
-                    )
-                    let topics = [
-                        TopicStat(id: UUID(), topic: "Work", count: 15, percentage: 0.32),
-                        TopicStat(id: UUID(), topic: "Health", count: 12, percentage: 0.26),
-                        TopicStat(id: UUID(), topic: "Relationships", count: 9, percentage: 0.19),
-                        TopicStat(id: UUID(), topic: "Personal Growth", count: 7, percentage: 0.15),
-                        TopicStat(id: UUID(), topic: "Creativity", count: 4, percentage: 0.08)
-                    ]
-                    
-                    await send(.dataLoaded(moodData: moodData, stats: stats, topics: topics))
+                    do {
+                        let range = period.dateRange
+                        let periodEntries = try await databaseClient.fetchEntries(range.start, range.end)
+                        let allEntries = try await databaseClient.fetchAllEntries()
+                        let currentStreak = try await databaseClient.calculateStreak()
+                        
+                        let data = Self.buildInsightsData(
+                            periodEntries: periodEntries,
+                            allEntries: allEntries,
+                            currentStreak: currentStreak,
+                            period: period
+                        )
+                        
+                        await send(.dataLoaded(data))
+                    } catch {
+                        await send(.loadFailed(error.localizedDescription))
+                    }
                 }
                 
-            case let .dataLoaded(moodData, stats, topics):
+            case let .dataLoaded(data):
                 state.isLoading = false
-                state.moodData = moodData
-                state.stats = stats
-                state.topTopics = topics
-                return .none
-                
-            case let .streakLoaded(streak):
-                state.streakInfo = streak
-                return .none
-                
-            case let .storyLoaded(story):
-                state.monthlyStory = story
+                state.hasLoadedOnce = true
+                state.moodData = data.moodData
+                state.moodDistribution = data.moodDistribution
+                state.moodCalendar = data.moodCalendar
+                state.stats = data.stats
+                state.streakInfo = data.streakInfo
+                state.topTopics = data.topTopics
+                state.writingActivity = data.writingActivity
+                state.behaviourPatterns = data.behaviourPatterns
                 return .none
                 
             case let .loadFailed(error):
                 state.isLoading = false
-                print("Insights load failed: \(error)")
+                state.hasLoadedOnce = true
+                state.errorMessage = error
                 return .none
                 
-            case .viewStoryTapped:
-                if let story = state.monthlyStory {
-                    state.storyDetail = MonthlyStoryDetailFeature.State(story: story)
+            case .previousMonth:
+                let calendar = Calendar.current
+                if let prev = calendar.date(byAdding: .month, value: -1, to: state.calendarMonth) {
+                    state.calendarMonth = prev
                 }
                 return .none
                 
-            case .generateNewStory:
-                state.isGeneratingStory = true
-                state.storyGenerationError = nil
-                return .run { [stats = state.stats, moodTrend = state.moodTrend, topics = state.topTopics, streak = state.streakInfo] send in
-                    let prompt = Self.buildStoryPrompt(
-                        stats: stats,
-                        moodTrend: moodTrend,
-                        topics: topics,
-                        streak: streak
-                    )
-                    
+            case .nextMonth:
+                let calendar = Calendar.current
+                let now = Date()
+                if let next = calendar.date(byAdding: .month, value: 1, to: state.calendarMonth),
+                   next <= calendar.date(byAdding: .month, value: 1, to: now) ?? now {
+                    state.calendarMonth = next
+                }
+                return .none
+                
+            case let .calendarMonthChanged(date):
+                state.calendarMonth = date
+                return .none
+                
+            case .generateAnalysis:
+                state.isGeneratingAnalysis = true
+                state.analysisError = nil
+                return .run { [state] send in
                     do {
+                        let allEntries = try await databaseClient.fetchAllEntries()
+                        let prompt = Self.buildAnalysisPrompt(
+                            entries: allEntries,
+                            stats: state.stats,
+                            moodTrend: state.moodTrend,
+                            trendDirection: state.moodTrendDirection,
+                            topics: state.topTopics,
+                            streak: state.streakInfo,
+                            patterns: state.behaviourPatterns,
+                            period: state.selectedPeriod
+                        )
+                        
                         let responseText = try await geminiClient.generateText(prompt)
-                        let story = Self.parseStoryResponse(responseText)
-                        await send(.storyGenerated(story))
+                        let analysis = Self.parseAnalysisResponse(responseText)
+                        await send(.analysisGenerated(analysis))
                     } catch {
-                        await send(.storyGenerationFailed(error.localizedDescription))
+                        await send(.analysisGenerationFailed(error.localizedDescription))
                     }
                 }
                 
-            case let .storyGenerated(story):
-                state.isGeneratingStory = false
-                state.monthlyStory = story
-                // Also update the detail view if it's open (for regeneration)
-                if state.storyDetail != nil {
-                    state.storyDetail = MonthlyStoryDetailFeature.State(story: story)
-                }
+            case let .analysisGenerated(analysis):
+                state.isGeneratingAnalysis = false
+                state.aiAnalysis = analysis
                 return .none
                 
-            case .storyDetail(.presented(.dismiss)):
-                state.storyDetail = nil
-                return .none
-                
-            case .storyDetail(.presented(.regenerate)):
-                // Bubble regenerate up to trigger a new AI story generation
-                return .send(.generateNewStory)
-                
-            case .storyDetail:
-                return .none
-                
-            case let .storyGenerationFailed(error):
-                state.isGeneratingStory = false
-                state.storyGenerationError = error
-                print("Story generation failed: \(error)")
+            case let .analysisGenerationFailed(error):
+                state.isGeneratingAnalysis = false
+                state.analysisError = error
                 return .none
                 
             case .shareInsights:
                 let stats = state.stats
                 let moodTrend = state.moodTrend
                 let streak = state.streakInfo
-                let period = state.selectedPeriod.label
+                let period = state.selectedPeriod.fullLabel
                 let topTopics = state.topTopics.prefix(3).map(\.topic).joined(separator: ", ")
+                let patterns = state.behaviourPatterns
                 
                 var lines: [String] = []
                 lines.append("My Mina Journal Insights (\(period))")
-                lines.append(String(repeating: "-", count: 36))
+                lines.append(String(repeating: "-", count: 40))
                 lines.append("")
-                lines.append("Entries: \(stats.entriesThisPeriod) this \(period.lowercased()) (\(stats.totalEntries) total)")
+                lines.append("Entries: \(stats.entriesThisPeriod) (\(stats.totalEntries) total)")
                 lines.append("Words written: \(stats.totalWords.formatted())")
                 lines.append("Avg words/entry: \(stats.averageWordsPerEntry)")
                 lines.append("")
-                lines.append("Mood trend: \(moodTrend)")
-                lines.append("Most productive: \(stats.mostProductiveDay)s, \(stats.mostProductiveTime)")
+                lines.append("Mood: \(moodTrend) (trend: \(state.moodTrendDirection.label))")
+                lines.append("Best writing day: \(patterns.mostProductiveDay)")
+                lines.append("Preferred time: \(patterns.mostProductiveTime)")
                 lines.append("")
                 lines.append("Streak: \(streak.currentStreak) days (best: \(streak.longestStreak))")
                 lines.append("Total days journaled: \(streak.totalDaysJournaled)")
                 if !topTopics.isEmpty {
                     lines.append("")
-                    lines.append("Top topics: \(topTopics)")
+                    lines.append("Top themes: \(topTopics)")
+                }
+                if let analysis = state.aiAnalysis {
+                    lines.append("")
+                    lines.append("AI Insight: \(analysis.summary)")
                 }
                 lines.append("")
                 lines.append("Powered by Mina - Your AI Journal")
@@ -406,6 +515,7 @@ struct InsightsFeature {
                             let updatedAt: String
                             let mood: String?
                             let tags: [String]
+                            let wordCount: Int
                         }
                         
                         let iso = ISO8601DateFormatter()
@@ -417,7 +527,8 @@ struct InsightsFeature {
                                 createdAt: iso.string(from: entry.createdAt),
                                 updatedAt: iso.string(from: entry.updatedAt),
                                 mood: entry.moodRawValue,
-                                tags: entry.tags
+                                tags: entry.tags,
+                                wordCount: entry.wordCount
                             )
                         }
                         
@@ -443,7 +554,7 @@ struct InsightsFeature {
                 return .none
                 
             case let .exportFailed(error):
-                print("Export failed: \(error)")
+                state.errorMessage = "Export failed: \(error)"
                 return .none
                 
             case .dismissShareSheet:
@@ -457,177 +568,371 @@ struct InsightsFeature {
                 return .none
             }
         }
-        .ifLet(\.$storyDetail, action: \.storyDetail) {
-            MonthlyStoryDetailFeature()
-        }
     }
 }
 
-// MARK: - AI Story Helpers
+// MARK: - Data Processing
 
 extension InsightsFeature {
     
-    /// Build the prompt sent to Gemini for monthly story generation.
-    /// Uses aggregated stats (not raw entry content) to protect user privacy.
-    static func buildStoryPrompt(
+    /// Build all insights data from real journal entries.
+    static func buildInsightsData(
+        periodEntries: [JournalEntry],
+        allEntries: [JournalEntry],
+        currentStreak: Int,
+        period: InsightPeriod
+    ) -> InsightsData {
+        let calendar = Calendar.current
+        let dateKeyFormatter = DateFormatter()
+        dateKeyFormatter.dateFormat = "yyyy-MM-dd"
+        
+        // --- Mood Data Points (daily averages) ---
+        var dayMoodMap: [String: (total: Double, count: Int, moods: [Mood])] = [:]
+        for entry in periodEntries {
+            guard let mood = entry.mood else { continue }
+            let key = dateKeyFormatter.string(from: entry.createdAt)
+            var existing = dayMoodMap[key] ?? (total: 0, count: 0, moods: [])
+            existing.total += mood.numericValue
+            existing.count += 1
+            existing.moods.append(mood)
+            dayMoodMap[key] = existing
+        }
+        
+        var moodDataPoints: [MoodDataPoint] = []
+        let range = period.dateRange
+        var currentDate = range.start
+        while currentDate <= range.end {
+            let key = dateKeyFormatter.string(from: currentDate)
+            if let dayData = dayMoodMap[key] {
+                let avgValue = dayData.total / Double(dayData.count)
+                let mood: Mood
+                if avgValue >= 4.5 { mood = .great }
+                else if avgValue >= 3.5 { mood = .good }
+                else if avgValue >= 2.5 { mood = .okay }
+                else if avgValue >= 1.5 { mood = .low }
+                else { mood = .bad }
+                
+                moodDataPoints.append(MoodDataPoint(
+                    id: UUID(),
+                    date: currentDate,
+                    value: avgValue,
+                    mood: mood
+                ))
+            }
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+        }
+        
+        // --- Mood Distribution ---
+        var moodCounts: [Mood: Int] = [:]
+        let entriesWithMood = periodEntries.filter { $0.mood != nil }
+        for entry in entriesWithMood {
+            if let mood = entry.mood {
+                moodCounts[mood, default: 0] += 1
+            }
+        }
+        let totalMooded = max(entriesWithMood.count, 1)
+        let moodDistribution = Mood.allCases.map { mood in
+            let count = moodCounts[mood] ?? 0
+            return MoodDistribution(
+                id: UUID(),
+                mood: mood,
+                count: count,
+                percentage: Double(count) / Double(totalMooded)
+            )
+        }
+        
+        // --- Mood Calendar (all entries, keyed by date) ---
+        var calendarMap: [String: CalendarDayData] = [:]
+        // Build from all entries for a full calendar view
+        for entry in allEntries {
+            let key = dateKeyFormatter.string(from: entry.createdAt)
+            if var existing = calendarMap[key] {
+                // not directly mutable from let, so rebuild
+                let newCount = existing.entryCount + 1
+                let moodVal = entry.mood?.numericValue
+                let newAvg: Double
+                if let mv = moodVal {
+                    newAvg = (existing.averageMood * Double(existing.entryCount) + mv) / Double(newCount)
+                } else {
+                    newAvg = existing.averageMood
+                }
+                let dominantMood: Mood?
+                if newAvg >= 4.5 { dominantMood = .great }
+                else if newAvg >= 3.5 { dominantMood = .good }
+                else if newAvg >= 2.5 { dominantMood = .okay }
+                else if newAvg >= 1.5 { dominantMood = .low }
+                else if newAvg > 0 { dominantMood = .bad }
+                else { dominantMood = existing.mood }
+                
+                calendarMap[key] = CalendarDayData(
+                    date: existing.date,
+                    mood: dominantMood,
+                    entryCount: newCount,
+                    averageMood: newAvg
+                )
+            } else {
+                calendarMap[key] = CalendarDayData(
+                    date: entry.createdAt,
+                    mood: entry.mood,
+                    entryCount: 1,
+                    averageMood: entry.mood?.numericValue ?? 0
+                )
+            }
+        }
+        
+        // --- Stats ---
+        let totalWords = periodEntries.reduce(0) { $0 + $1.wordCount }
+        let longestEntry = periodEntries.map(\.wordCount).max() ?? 0
+        let shortestEntry = periodEntries.isEmpty ? 0 : (periodEntries.map(\.wordCount).min() ?? 0)
+        let allTotalEntries = allEntries.count
+        let allTotalWords = allEntries.reduce(0) { $0 + $1.wordCount }
+        
+        let stats = JournalStats(
+            totalEntries: allTotalEntries,
+            totalWords: allTotalWords,
+            averageWordsPerEntry: periodEntries.isEmpty ? 0 : totalWords / periodEntries.count,
+            entriesThisPeriod: periodEntries.count,
+            longestEntry: longestEntry,
+            shortestEntry: shortestEntry,
+            entriesWithMood: entriesWithMood.count
+        )
+        
+        // --- Streak ---
+        // Calculate longest streak from all entries
+        var daysWithEntries = Set<Date>()
+        for entry in allEntries {
+            daysWithEntries.insert(calendar.startOfDay(for: entry.createdAt))
+        }
+        let sortedDays = daysWithEntries.sorted()
+        var longestStreak = 0
+        var tempStreak = 1
+        for i in 1..<sortedDays.count {
+            if let expected = calendar.date(byAdding: .day, value: 1, to: sortedDays[i-1]),
+               calendar.isDate(expected, inSameDayAs: sortedDays[i]) {
+                tempStreak += 1
+            } else {
+                longestStreak = max(longestStreak, tempStreak)
+                tempStreak = 1
+            }
+        }
+        longestStreak = max(longestStreak, tempStreak)
+        if sortedDays.isEmpty { longestStreak = 0 }
+        
+        let streakInfo = StreakInfo(
+            currentStreak: currentStreak,
+            longestStreak: longestStreak,
+            totalDaysJournaled: daysWithEntries.count,
+            lastEntryDate: allEntries.first?.createdAt
+        )
+        
+        // --- Top Topics ---
+        var tagCounts: [String: Int] = [:]
+        for entry in periodEntries {
+            for tag in entry.tags {
+                let normalizedTag = tag.trimmingCharacters(in: .whitespaces).capitalized
+                guard !normalizedTag.isEmpty else { continue }
+                tagCounts[normalizedTag, default: 0] += 1
+            }
+        }
+        let totalTags = max(tagCounts.values.reduce(0, +), 1)
+        let topTopics = tagCounts
+            .sorted { $0.value > $1.value }
+            .prefix(8)
+            .map { TopicStat(id: UUID(), topic: $0.key, count: $0.value, percentage: Double($0.value) / Double(totalTags)) }
+        
+        // --- Writing Activity ---
+        var dayEntryCounts: [String: (count: Int, words: Int, date: Date)] = [:]
+        for entry in periodEntries {
+            let key = dateKeyFormatter.string(from: entry.createdAt)
+            var existing = dayEntryCounts[key] ?? (count: 0, words: 0, date: entry.createdAt)
+            existing.count += 1
+            existing.words += entry.wordCount
+            dayEntryCounts[key] = existing
+        }
+        
+        var activityPoints: [ActivityDataPoint] = []
+        currentDate = range.start
+        while currentDate <= range.end {
+            let key = dateKeyFormatter.string(from: currentDate)
+            let data = dayEntryCounts[key]
+            activityPoints.append(ActivityDataPoint(
+                id: UUID(),
+                date: currentDate,
+                entryCount: data?.count ?? 0,
+                wordCount: data?.words ?? 0
+            ))
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+        }
+        
+        // --- Behaviour Patterns ---
+        var dayOfWeekCounts = Array(repeating: 0, count: 7)
+        var dayOfWeekMoodTotals = Array(repeating: (total: 0.0, count: 0), count: 7)
+        var timeOfDayCounts = Array(repeating: 0, count: 4) // Morning(5-11), Afternoon(12-16), Evening(17-20), Night(21-4)
+        
+        for entry in periodEntries {
+            // Day of week (1=Sunday in Calendar, we want 0=Mon)
+            let weekday = calendar.component(.weekday, from: entry.createdAt)
+            let mondayBasedIndex = (weekday + 5) % 7 // Convert: Sun=6, Mon=0, Tue=1, ...
+            dayOfWeekCounts[mondayBasedIndex] += 1
+            
+            if let mood = entry.mood {
+                dayOfWeekMoodTotals[mondayBasedIndex].total += mood.numericValue
+                dayOfWeekMoodTotals[mondayBasedIndex].count += 1
+            }
+            
+            let hour = calendar.component(.hour, from: entry.createdAt)
+            let timeSlot: Int
+            if hour >= 5 && hour < 12 { timeSlot = 0 } // Morning
+            else if hour >= 12 && hour < 17 { timeSlot = 1 } // Afternoon
+            else if hour >= 17 && hour < 21 { timeSlot = 2 } // Evening
+            else { timeSlot = 3 } // Night
+            timeOfDayCounts[timeSlot] += 1
+        }
+        
+        let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        let timeNames = ["Morning", "Afternoon", "Evening", "Night"]
+        
+        let mostProductiveDayIndex = dayOfWeekCounts.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+        let mostProductiveTimeIndex = timeOfDayCounts.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+        
+        // Best/worst mood days
+        let bestMoodDayIndex = dayOfWeekMoodTotals.enumerated()
+            .filter { $0.element.count > 0 }
+            .max(by: { ($0.element.total / Double($0.element.count)) < ($1.element.total / Double($1.element.count)) })?.offset
+        let worstMoodDayIndex = dayOfWeekMoodTotals.enumerated()
+            .filter { $0.element.count > 0 }
+            .min(by: { ($0.element.total / Double($0.element.count)) < ($1.element.total / Double($1.element.count)) })?.offset
+        
+        let activeDays = max(Double(period.dayCount), 1)
+        
+        let patterns = BehaviourPatterns(
+            mostProductiveDay: dayOfWeekCounts[mostProductiveDayIndex] > 0 ? dayNames[mostProductiveDayIndex] : "-",
+            mostProductiveTime: timeOfDayCounts[mostProductiveTimeIndex] > 0 ? timeNames[mostProductiveTimeIndex] : "-",
+            averageEntriesPerDay: Double(periodEntries.count) / activeDays,
+            bestMoodDay: bestMoodDayIndex.map { dayNames[$0] } ?? "-",
+            worstMoodDay: worstMoodDayIndex.map { dayNames[$0] } ?? "-",
+            dayOfWeekDistribution: dayOfWeekCounts,
+            timeOfDayDistribution: timeOfDayCounts
+        )
+        
+        return InsightsData(
+            moodData: moodDataPoints,
+            moodDistribution: moodDistribution,
+            moodCalendar: calendarMap,
+            stats: stats,
+            streakInfo: streakInfo,
+            topTopics: topTopics,
+            writingActivity: activityPoints,
+            behaviourPatterns: patterns
+        )
+    }
+}
+
+// MARK: - AI Analysis Helpers
+
+extension InsightsFeature {
+    
+    /// Build a rich prompt for Gemini to generate an overall analysis.
+    /// Sends aggregated stats + recent entry snippets for context.
+    static func buildAnalysisPrompt(
+        entries: [JournalEntry],
         stats: JournalStats,
         moodTrend: String,
+        trendDirection: TrendDirection,
         topics: [TopicStat],
-        streak: StreakInfo
+        streak: StreakInfo,
+        patterns: BehaviourPatterns,
+        period: InsightPeriod
     ) -> String {
-        let calendar = Calendar.current
-        let now = Date()
-        let monthFormatter = DateFormatter()
-        monthFormatter.dateFormat = "MMMM"
-        let currentMonth = monthFormatter.string(from: now)
-        let currentYear = calendar.component(.year, from: now)
+        // Include short snippets from recent entries for richer analysis
+        let recentSnippets = entries.prefix(10).enumerated().map { index, entry in
+            let moodLabel = entry.mood?.label ?? "unset"
+            let preview = String(entry.content.prefix(150))
+            let tags = entry.tags.joined(separator: ", ")
+            return "Entry \(index+1) (mood: \(moodLabel), tags: [\(tags)]): \"\(preview)...\""
+        }.joined(separator: "\n")
         
-        let topicsList = topics.prefix(5).map { "\($0.topic) (\($0.count) entries, \(Int($0.percentage * 100))%)" }.joined(separator: ", ")
+        let topicsList = topics.prefix(5).map { "\($0.topic) (\($0.count) entries)" }.joined(separator: ", ")
         
         return """
-        You are a compassionate and insightful journaling assistant for the app "Mina". \
-        Generate a personalized monthly reflection story based on these journaling statistics. \
-        Write in second person ("you"). Be warm, encouraging, and specific.
+        You are a compassionate, insightful journaling wellness analyst for the app "Mina". \
+        Analyze the user's journaling data and provide a thoughtful, personalized analysis. \
+        Write in second person ("you"). Be warm but specific — reference actual patterns you observe.
 
-        Month: \(currentMonth) \(currentYear)
-        Total entries this period: \(stats.entriesThisPeriod)
-        Total words written: \(stats.totalWords)
-        Average words per entry: \(stats.averageWordsPerEntry)
-        Overall mood trend: \(moodTrend)
-        Most productive day: \(stats.mostProductiveDay)
-        Most productive time: \(stats.mostProductiveTime)
-        Current journaling streak: \(streak.currentStreak) days
-        Longest streak: \(streak.longestStreak) days
-        Top themes: \(topicsList)
+        TIME PERIOD: \(period.fullLabel)
+        
+        STATS:
+        - Total entries: \(stats.totalEntries) (\(stats.entriesThisPeriod) this period)
+        - Total words: \(stats.totalWords)
+        - Average words per entry: \(stats.averageWordsPerEntry)
+        - Entries with mood tracked: \(stats.entriesWithMood)
+        - Overall mood: \(moodTrend) (trend: \(trendDirection.label))
+        - Journaling streak: \(streak.currentStreak) days (best: \(streak.longestStreak))
+        - Most productive day: \(patterns.mostProductiveDay)
+        - Preferred time: \(patterns.mostProductiveTime)
+        - Best mood day: \(patterns.bestMoodDay)
+        - Top themes: \(topicsList)
 
-        Respond in EXACTLY this JSON format (no markdown, no code fences, just raw JSON):
+        RECENT ENTRIES (snippets):
+        \(recentSnippets.isEmpty ? "No entries yet." : recentSnippets)
+
+        Respond in EXACTLY this JSON format (no markdown fences, raw JSON only):
         {
-          "summary": "A 2-3 sentence summary of the month's journaling journey.",
-          "highlights": ["highlight 1", "highlight 2", "highlight 3"],
-          "moodSummary": "A 1-2 sentence description of the mood journey this month.",
-          "topThemes": ["theme1", "theme2", "theme3"]
+          "summary": "A 2-3 sentence overall assessment of their journaling practice and emotional wellbeing.",
+          "moodInsight": "A 1-2 sentence insight about their mood patterns and what might be driving them.",
+          "patterns": ["pattern 1", "pattern 2", "pattern 3"],
+          "suggestions": ["actionable suggestion 1", "actionable suggestion 2", "actionable suggestion 3"]
         }
 
         Rules:
-        - summary should reference specific stats naturally (entries, words, streak)
-        - highlights should be 3 specific, encouraging observations drawn from the data
-        - moodSummary should reference the mood trend ("\(moodTrend)") and be supportive
-        - topThemes should be 3-5 single-word or short-phrase themes derived from the top topics
-        - Keep the tone personal, warm, and reflective — not generic
+        - summary: Be specific about their journaling habits. Reference real numbers naturally.
+        - moodInsight: Connect mood to their topics/themes if possible. Note the trend direction.
+        - patterns: 3 specific behavioural patterns you notice (writing habits, mood cycles, topic focus).
+        - suggestions: 3 actionable, encouraging suggestions to improve their practice or wellbeing.
+        - If there is very little data, acknowledge that and encourage them to keep journaling.
+        - Keep tone warm, personal, and insightful — not generic or clinical.
         """
     }
     
-    /// Parse the JSON response from Gemini into a MonthlyStory.
-    /// Falls back gracefully if JSON parsing fails.
-    static func parseStoryResponse(_ text: String) -> MonthlyStory {
-        let calendar = Calendar.current
-        let now = Date()
-        let monthFormatter = DateFormatter()
-        monthFormatter.dateFormat = "MMMM"
-        let currentMonth = monthFormatter.string(from: now)
-        let currentYear = calendar.component(.year, from: now)
-        
-        // Try to parse structured JSON
-        // Strip any markdown code fences if the model included them
+    /// Parse the JSON response from Gemini into an AIAnalysis.
+    static func parseAnalysisResponse(_ text: String) -> AIAnalysis {
         var cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleanedText.hasPrefix("```") {
-            // Remove opening fence (```json or ```)
             if let firstNewline = cleanedText.firstIndex(of: "\n") {
                 cleanedText = String(cleanedText[cleanedText.index(after: firstNewline)...])
             }
-            // Remove closing fence
             if cleanedText.hasSuffix("```") {
                 cleanedText = String(cleanedText.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         
-        struct StoryJSON: Decodable {
+        struct AnalysisJSON: Decodable {
             let summary: String
-            let highlights: [String]
-            let moodSummary: String
-            let topThemes: [String]
+            let moodInsight: String
+            let patterns: [String]
+            let suggestions: [String]
         }
         
         if let data = cleanedText.data(using: .utf8),
-           let parsed = try? JSONDecoder().decode(StoryJSON.self, from: data) {
-            return MonthlyStory(
+           let parsed = try? JSONDecoder().decode(AnalysisJSON.self, from: data) {
+            return AIAnalysis(
                 id: UUID(),
-                month: currentMonth,
-                year: currentYear,
                 summary: parsed.summary,
-                highlights: parsed.highlights,
-                moodSummary: parsed.moodSummary,
-                topThemes: parsed.topThemes,
-                generatedAt: now
+                moodInsight: parsed.moodInsight,
+                patterns: parsed.patterns,
+                suggestions: parsed.suggestions,
+                generatedAt: Date()
             )
         }
         
-        // Fallback: use the raw text as the summary
-        return MonthlyStory(
+        // Fallback
+        return AIAnalysis(
             id: UUID(),
-            month: currentMonth,
-            year: currentYear,
             summary: text,
-            highlights: [],
-            moodSummary: "Your mood this month has been reflective.",
-            topThemes: ["Reflection"],
-            generatedAt: now
+            moodInsight: "Keep tracking your mood to unlock deeper insights.",
+            patterns: [],
+            suggestions: ["Continue journaling regularly to build richer insights."],
+            generatedAt: Date()
         )
     }
-}
-
-// MARK: - Monthly Story Detail Feature
-
-@Reducer
-struct MonthlyStoryDetailFeature {
-    
-    @ObservableState
-    struct State: Equatable {
-        let story: InsightsFeature.MonthlyStory
-    }
-    
-    enum Action {
-        case dismiss
-        case share
-        case regenerate
-    }
-    
-    var body: some ReducerOf<Self> {
-        Reduce { state, action in
-            return .none
-        }
-    }
-}
-
-// MARK: - Helper Functions
-
-private func generateSampleMoodData(for period: InsightsFeature.InsightPeriod) -> [InsightsFeature.MoodDataPoint] {
-    let calendar = Calendar.current
-    let today = Date()
-    
-    let days: Int
-    switch period {
-    case .week: days = 7
-    case .month: days = 30
-    case .year: days = 52 // Weekly averages
-    case .allTime: days = 30
-    }
-    
-    return (0..<days).compactMap { i in
-        let date = calendar.date(byAdding: .day, value: -i, to: today) ?? today
-        let value = Double.random(in: 2.5...5.0)
-        let mood: Mood
-        if value >= 4.5 { mood = .great }
-        else if value >= 3.5 { mood = .good }
-        else if value >= 2.5 { mood = .okay }
-        else if value >= 1.5 { mood = .low }
-        else { mood = .bad }
-        
-        return InsightsFeature.MoodDataPoint(
-            id: UUID(),
-            date: date,
-            value: value,
-            mood: mood
-        )
-    }.reversed()
 }

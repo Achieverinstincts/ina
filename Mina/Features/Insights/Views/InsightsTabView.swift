@@ -2,7 +2,7 @@ import SwiftUI
 import ComposableArchitecture
 
 // MARK: - Insights Tab View
-// Main insights view with mood graphs, stats, and monthly story
+// Comprehensive insights with AI analysis, mood calendar, charts, and behaviour patterns
 
 struct InsightsTabView: View {
     
@@ -14,8 +14,10 @@ struct InsightsTabView: View {
                 Color.minaBackground
                     .ignoresSafeArea()
                 
-                if store.isLoading && store.moodData.isEmpty {
+                if store.isLoading && !store.hasLoadedOnce {
                     loadingView
+                } else if let error = store.errorMessage, !store.hasLoadedOnce {
+                    errorView(error)
                 } else {
                     insightsContent
                 }
@@ -45,11 +47,6 @@ struct InsightsTabView: View {
             .refreshable {
                 await store.send(.refresh).finish()
             }
-            .sheet(
-                item: $store.scope(state: \.storyDetail, action: \.storyDetail)
-            ) { detailStore in
-                MonthlyStoryDetailView(store: detailStore)
-            }
         }
         .onAppear {
             store.send(.onAppear)
@@ -69,7 +66,37 @@ struct InsightsTabView: View {
         }
     }
     
-    // MARK: - Insights Content
+    // MARK: - Error View
+    
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(Color.minaWarning)
+            
+            Text("Unable to load insights")
+                .font(.minaHeadline)
+                .foregroundStyle(Color.minaPrimary)
+            
+            Text(message)
+                .font(.minaSubheadline)
+                .foregroundStyle(Color.minaSecondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Try Again") {
+                store.send(.refresh)
+            }
+            .font(.minaHeadline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 12)
+            .background(Color.minaAccent)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .padding(32)
+    }
+    
+    // MARK: - Main Content
     
     private var insightsContent: some View {
         ScrollView {
@@ -78,38 +105,77 @@ struct InsightsTabView: View {
                 periodSelector
                     .padding(.horizontal, 16)
                 
-                // Streak card
-                streakCard
-                    .padding(.horizontal, 16)
-                
-                // Mood chart
-                moodChartCard
-                    .padding(.horizontal, 16)
-                
-                // Stats grid
-                statsGrid
-                    .padding(.horizontal, 16)
-                
-                // Top topics
-                topicsCard
-                    .padding(.horizontal, 16)
-                
-                // Monthly story
-                if store.monthlyStory != nil {
-                    monthlyStoryCard
+                // Empty state
+                if store.stats.totalEntries == 0 {
+                    emptyStateView
                         .padding(.horizontal, 16)
-                } else if store.isGeneratingStory {
-                    storyGeneratingCard
+                } else {
+                    // AI Analysis card
+                    aiAnalysisCard
                         .padding(.horizontal, 16)
-                } else if !store.isLoading {
-                    generateStoryCard
+                    
+                    // Streak & overview
+                    streakCard
                         .padding(.horizontal, 16)
+                    
+                    // Mood overview (trend + average)
+                    moodOverviewCard
+                        .padding(.horizontal, 16)
+                    
+                    // Mood Calendar Heatmap
+                    moodCalendarCard
+                        .padding(.horizontal, 16)
+                    
+                    // Mood Distribution
+                    moodDistributionCard
+                        .padding(.horizontal, 16)
+                    
+                    // Writing Activity
+                    writingActivityCard
+                        .padding(.horizontal, 16)
+                    
+                    // Stats grid
+                    statsGrid
+                        .padding(.horizontal, 16)
+                    
+                    // Behaviour Patterns
+                    behaviourPatternsCard
+                        .padding(.horizontal, 16)
+                    
+                    // Top themes
+                    if !store.topTopics.isEmpty {
+                        topicsCard
+                            .padding(.horizontal, 16)
+                    }
                 }
                 
                 Spacer(minLength: 100)
             }
             .padding(.top, 8)
         }
+    }
+    
+    // MARK: - Empty State
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.minaSecondary.opacity(0.5))
+            
+            Text("Start journaling to see insights")
+                .font(.minaHeadline)
+                .foregroundStyle(Color.minaPrimary)
+            
+            Text("Your mood patterns, writing habits, and AI-powered analysis will appear here once you start writing entries.")
+                .font(.minaSubheadline)
+                .foregroundStyle(Color.minaSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity)
+        .background(Color.minaCardSolid)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
     // MARK: - Period Selector
@@ -136,14 +202,177 @@ struct InsightsTabView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     
+    // MARK: - AI Analysis Card
+    
+    private var aiAnalysisCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.minaAI)
+                    
+                    Text("AI Analysis")
+                        .font(.minaHeadline)
+                        .foregroundStyle(Color.minaPrimary)
+                }
+                
+                Spacer()
+                
+                if store.aiAnalysis != nil {
+                    Button {
+                        store.send(.generateAnalysis)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.minaSecondary)
+                    }
+                }
+            }
+            
+            if store.isGeneratingAnalysis {
+                HStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(0.9)
+                    Text("Analyzing your patterns...")
+                        .font(.minaSubheadline)
+                        .foregroundStyle(Color.minaSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+                
+            } else if let analysis = store.aiAnalysis {
+                // Summary
+                Text(analysis.summary)
+                    .font(.minaBody)
+                    .foregroundStyle(Color.minaPrimary)
+                    .lineSpacing(4)
+                
+                // Mood insight
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "heart.text.square")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.pink)
+                        .padding(.top, 2)
+                    
+                    Text(analysis.moodInsight)
+                        .font(.minaSubheadline)
+                        .foregroundStyle(Color.minaSecondary)
+                        .lineSpacing(3)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.pink.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                
+                // Patterns
+                if !analysis.patterns.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Patterns")
+                            .font(.minaCaption1)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.minaSecondary)
+                            .textCase(.uppercase)
+                        
+                        ForEach(analysis.patterns, id: \.self) { pattern in
+                            HStack(alignment: .top, spacing: 8) {
+                                Circle()
+                                    .fill(Color.minaAI)
+                                    .frame(width: 6, height: 6)
+                                    .padding(.top, 6)
+                                
+                                Text(pattern)
+                                    .font(.minaSubheadline)
+                                    .foregroundStyle(Color.minaPrimary)
+                            }
+                        }
+                    }
+                }
+                
+                // Suggestions
+                if !analysis.suggestions.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Suggestions")
+                            .font(.minaCaption1)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.minaSecondary)
+                            .textCase(.uppercase)
+                        
+                        ForEach(analysis.suggestions, id: \.self) { suggestion in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.minaWarning)
+                                    .padding(.top, 3)
+                                
+                                Text(suggestion)
+                                    .font(.minaSubheadline)
+                                    .foregroundStyle(Color.minaPrimary)
+                            }
+                        }
+                    }
+                }
+                
+                // Generated time
+                Text("Generated \(formattedDate(analysis.generatedAt))")
+                    .font(.minaCaption2)
+                    .foregroundStyle(Color.minaTertiary)
+                
+            } else {
+                // Generate button
+                VStack(spacing: 12) {
+                    Text("Get a personalized AI analysis of your journaling patterns, mood trends, and suggestions.")
+                        .font(.minaSubheadline)
+                        .foregroundStyle(Color.minaSecondary)
+                    
+                    if let error = store.analysisError {
+                        Text(error)
+                            .font(.minaCaption1)
+                            .foregroundStyle(Color.minaError)
+                    }
+                    
+                    Button {
+                        store.send(.generateAnalysis)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14))
+                            Text("Generate Analysis")
+                                .font(.minaSubheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(LinearGradient.minaAIGradient)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [Color.minaAI.opacity(0.08), Color.minaAI.opacity(0.03)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.minaAI.opacity(0.15), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
     // MARK: - Streak Card
     
     private var streakCard: some View {
         HStack(spacing: 16) {
-            // Current streak
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("🔥")
+                    Text("\u{1F525}")
                         .font(.system(size: 24))
                     
                     Text("\(store.streakInfo.currentStreak)")
@@ -151,14 +380,13 @@ struct InsightsTabView: View {
                         .foregroundStyle(Color.minaAccent)
                 }
                 
-                Text("Day Streak")
+                Text(store.streakInfo.currentStreak == 1 ? "Day Streak" : "Day Streak")
                     .font(.minaCaption1)
                     .foregroundStyle(Color.minaSecondary)
             }
             
             Spacer()
             
-            // Stats
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(spacing: 16) {
                     StatMini(label: "Best", value: "\(store.streakInfo.longestStreak)")
@@ -181,11 +409,10 @@ struct InsightsTabView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
-    // MARK: - Mood Chart Card
+    // MARK: - Mood Overview Card
     
-    private var moodChartCard: some View {
+    private var moodOverviewCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Mood Trend")
@@ -193,11 +420,11 @@ struct InsightsTabView: View {
                         .foregroundStyle(Color.minaPrimary)
                     
                     HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color(hex: store.moodTrendColor))
-                            .frame(width: 8, height: 8)
+                        Image(systemName: store.moodTrendDirection.icon)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color(hex: store.moodTrendDirection.colorHex))
                         
-                        Text(store.moodTrend)
+                        Text("\(store.moodTrend) \u{00B7} \(store.moodTrendDirection.label)")
                             .font(.minaSubheadline)
                             .foregroundStyle(Color.minaSecondary)
                     }
@@ -205,11 +432,10 @@ struct InsightsTabView: View {
                 
                 Spacer()
                 
-                // Average mood
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.1f", store.averageMood))
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.minaPrimary)
+                    Text(store.averageMood > 0 ? String(format: "%.1f", store.averageMood) : "-")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(hex: store.moodTrendColor))
                     
                     Text("avg mood")
                         .font(.minaCaption2)
@@ -217,22 +443,182 @@ struct InsightsTabView: View {
                 }
             }
             
-            // Chart
-            MoodChartView(data: store.moodData)
-                .frame(height: 120)
+            // Mood line chart
+            if store.moodData.count > 1 {
+                MoodChartView(data: store.moodData)
+                    .frame(height: 120)
+            } else if store.moodData.isEmpty {
+                Text("Track your mood in entries to see trends here")
+                    .font(.minaCaption1)
+                    .foregroundStyle(Color.minaSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 20)
+            }
+        }
+        .padding(20)
+        .background(Color.minaCardSolid)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Mood Calendar Heatmap
+    
+    private var moodCalendarCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header with month navigation
+            HStack {
+                Text("Mood Calendar")
+                    .font(.minaHeadline)
+                    .foregroundStyle(Color.minaPrimary)
+                
+                Spacer()
+                
+                HStack(spacing: 16) {
+                    Button { store.send(.previousMonth) } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.minaSecondary)
+                    }
+                    
+                    Text(calendarMonthLabel)
+                        .font(.minaSubheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.minaPrimary)
+                        .frame(minWidth: 90)
+                    
+                    Button { store.send(.nextMonth) } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.minaSecondary)
+                    }
+                }
+            }
+            
+            // Day headers
+            let dayHeaders = ["M", "T", "W", "T", "F", "S", "S"]
+            HStack(spacing: 0) {
+                ForEach(dayHeaders, id: \.self) { day in
+                    Text(day)
+                        .font(.minaCaption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.minaSecondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            
+            // Calendar grid
+            let days = calendarDays
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
+                ForEach(days, id: \.self) { date in
+                    calendarDayCell(date)
+                }
+            }
             
             // Legend
-            HStack(spacing: 16) {
-                ForEach(Mood.allCases.prefix(3)) { mood in
+            HStack(spacing: 12) {
+                ForEach(Mood.allCases) { mood in
                     HStack(spacing: 4) {
-                        Text(mood.emoji)
-                            .font(.system(size: 12))
+                        Circle()
+                            .fill(moodColor(mood))
+                            .frame(width: 8, height: 8)
                         Text(mood.label)
                             .font(.minaCaption2)
                             .foregroundStyle(Color.minaSecondary)
                     }
                 }
                 Spacer()
+            }
+        }
+        .padding(20)
+        .background(Color.minaCardSolid)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Mood Distribution Chart
+    
+    private var moodDistributionCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Mood Distribution")
+                .font(.minaHeadline)
+                .foregroundStyle(Color.minaPrimary)
+            
+            let maxCount = store.moodDistribution.map(\.count).max() ?? 1
+            
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach(store.moodDistribution) { dist in
+                    VStack(spacing: 6) {
+                        // Count label
+                        Text("\(dist.count)")
+                            .font(.minaCaption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(dist.count > 0 ? Color.minaPrimary : Color.minaTertiary)
+                        
+                        // Bar
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(dist.count > 0 ? moodColor(dist.mood) : Color.minaSecondary.opacity(0.15))
+                            .frame(height: max(CGFloat(dist.count) / CGFloat(max(maxCount, 1)) * 80, 4))
+                        
+                        // Emoji
+                        Text(dist.mood.emoji)
+                            .font(.system(size: 18))
+                        
+                        // Percentage
+                        Text(dist.count > 0 ? "\(Int(dist.percentage * 100))%" : "-")
+                            .font(.minaCaption2)
+                            .foregroundStyle(Color.minaSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 150)
+        }
+        .padding(20)
+        .background(Color.minaCardSolid)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Writing Activity Card
+    
+    private var writingActivityCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Writing Activity")
+                    .font(.minaHeadline)
+                    .foregroundStyle(Color.minaPrimary)
+                
+                Spacer()
+                
+                Text("\(store.stats.entriesThisPeriod) entries")
+                    .font(.minaCaption1)
+                    .foregroundStyle(Color.minaSecondary)
+            }
+            
+            // Activity bar chart (show last N days based on period)
+            let displayData = activityDisplayData
+            if !displayData.isEmpty {
+                WritingActivityChartView(data: displayData)
+                    .frame(height: 80)
+            } else {
+                Text("No entries in this period")
+                    .font(.minaCaption1)
+                    .foregroundStyle(Color.minaSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 16)
+            }
+            
+            // Summary stats
+            HStack(spacing: 0) {
+                ActivityMiniStat(
+                    label: "Total Words",
+                    value: formatNumber(store.stats.totalWords)
+                )
+                ActivityMiniStat(
+                    label: "Avg/Entry",
+                    value: "\(store.stats.averageWordsPerEntry)"
+                )
+                ActivityMiniStat(
+                    label: "Longest",
+                    value: formatNumber(store.stats.longestEntry)
+                )
             }
         }
         .padding(20)
@@ -248,9 +634,9 @@ struct InsightsTabView: View {
             GridItem(.flexible(), spacing: 12)
         ], spacing: 12) {
             StatCard(
-                icon: "doc.text",
+                icon: "doc.text.fill",
                 value: "\(store.stats.entriesThisPeriod)",
-                label: "Entries",
+                label: "This Period",
                 color: Color.blue
             )
             
@@ -262,26 +648,115 @@ struct InsightsTabView: View {
             )
             
             StatCard(
-                icon: "calendar",
-                value: store.stats.mostProductiveDay,
-                label: "Best Day",
-                color: Color.orange
+                icon: "face.smiling",
+                value: "\(store.stats.entriesWithMood)",
+                label: "Moods Tracked",
+                color: Color.pink
             )
             
             StatCard(
-                icon: "clock",
-                value: store.stats.mostProductiveTime,
-                label: "Best Time",
+                icon: "books.vertical.fill",
+                value: "\(store.stats.totalEntries)",
+                label: "All Entries",
                 color: Color.teal
             )
         }
     }
     
-    private func formatNumber(_ num: Int) -> String {
-        if num >= 1000 {
-            return String(format: "%.1fK", Double(num) / 1000.0)
+    // MARK: - Behaviour Patterns Card
+    
+    private var behaviourPatternsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Behaviour Patterns")
+                .font(.minaHeadline)
+                .foregroundStyle(Color.minaPrimary)
+            
+            // Day of week distribution
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ENTRIES BY DAY")
+                    .font(.minaCaption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.minaSecondary)
+                
+                let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                let maxDay = store.behaviourPatterns.dayOfWeekDistribution.max() ?? 1
+                
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(0..<7, id: \.self) { index in
+                        let count = store.behaviourPatterns.dayOfWeekDistribution[index]
+                        VStack(spacing: 4) {
+                            Text("\(count)")
+                                .font(.minaCaption2)
+                                .foregroundStyle(count > 0 ? Color.minaPrimary : Color.minaTertiary)
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(count > 0 ? Color.minaAccent.opacity(0.7 + 0.3 * Double(count) / Double(max(maxDay, 1))) : Color.minaSecondary.opacity(0.1))
+                                .frame(height: max(CGFloat(count) / CGFloat(max(maxDay, 1)) * 50, 3))
+                            
+                            Text(dayNames[index])
+                                .font(.minaCaption2)
+                                .foregroundStyle(Color.minaSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: 90)
+            }
+            
+            Divider()
+                .background(Color.minaDivider)
+            
+            // Time of day distribution
+            VStack(alignment: .leading, spacing: 8) {
+                Text("PREFERRED TIME")
+                    .font(.minaCaption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.minaSecondary)
+                
+                let timeNames = ["Morning", "Afternoon", "Evening", "Night"]
+                let timeIcons = ["sun.max.fill", "sun.min.fill", "sunset.fill", "moon.fill"]
+                let timeColors: [Color] = [.orange, .yellow, .pink, .indigo]
+                let maxTime = store.behaviourPatterns.timeOfDayDistribution.max() ?? 1
+                
+                HStack(spacing: 8) {
+                    ForEach(0..<4, id: \.self) { index in
+                        let count = store.behaviourPatterns.timeOfDayDistribution[index]
+                        let isMax = count == maxTime && count > 0
+                        
+                        VStack(spacing: 6) {
+                            Image(systemName: timeIcons[index])
+                                .font(.system(size: 16))
+                                .foregroundStyle(timeColors[index])
+                            
+                            Text(timeNames[index])
+                                .font(.minaCaption2)
+                                .foregroundStyle(Color.minaPrimary)
+                            
+                            Text("\(count)")
+                                .font(.system(size: 16, weight: isMax ? .bold : .medium, design: .rounded))
+                                .foregroundStyle(isMax ? Color.minaAccent : Color.minaSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(isMax ? Color.minaAccent.opacity(0.1) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            
+            Divider()
+                .background(Color.minaDivider)
+            
+            // Key patterns summary
+            HStack(spacing: 12) {
+                PatternPill(icon: "calendar", label: "Best Day", value: store.behaviourPatterns.mostProductiveDay)
+                PatternPill(icon: "clock", label: "Best Time", value: store.behaviourPatterns.mostProductiveTime)
+                PatternPill(icon: "face.smiling", label: "Happiest", value: store.behaviourPatterns.bestMoodDay)
+            }
         }
-        return "\(num)"
+        .padding(20)
+        .background(Color.minaCardSolid)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
     // MARK: - Topics Card
@@ -303,152 +778,155 @@ struct InsightsTabView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
-    // MARK: - Monthly Story Card
+    // MARK: - Helpers
     
-    private var monthlyStoryCard: some View {
-        Button {
-            store.send(.viewStoryTapped)
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Color.minaAI)
-                            
-                            Text("Monthly Story")
-                                .font(.minaHeadline)
-                                .foregroundStyle(Color.minaPrimary)
-                        }
-                        
-                        if let story = store.monthlyStory {
-                            Text("\(story.month) \(String(story.year))")
-                                .font(.minaCaption1)
-                                .foregroundStyle(Color.minaSecondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.minaSecondary)
-                }
-                
-                if let story = store.monthlyStory {
-                    Text(story.summary)
-                        .font(.minaSubheadline)
-                        .foregroundStyle(Color.minaSecondary)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(20)
-            .background(
-                LinearGradient(
-                    colors: [Color.minaAI.opacity(0.1), Color.minaAI.opacity(0.05)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.minaAI.opacity(0.2), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+    private func formatNumber(_ num: Int) -> String {
+        if num >= 1000 {
+            return String(format: "%.1fK", Double(num) / 1000.0)
         }
-        .buttonStyle(.plain)
+        return "\(num)"
     }
     
-    // MARK: - Story Generating Card
-    
-    private var storyGeneratingCard: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.minaAI)
-                
-                Text("Monthly Story")
-                    .font(.minaHeadline)
-                    .foregroundStyle(Color.minaPrimary)
-                
-                Spacer()
-            }
-            
-            HStack(spacing: 12) {
-                ProgressView()
-                    .scaleEffect(0.9)
-                
-                Text("Generating your story...")
-                    .font(.minaSubheadline)
-                    .foregroundStyle(Color.minaSecondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [Color.minaAI.opacity(0.1), Color.minaAI.opacity(0.05)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.minaAI.opacity(0.2), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
     
-    // MARK: - Generate Story Card
+    private var calendarMonthLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: store.calendarMonth)
+    }
     
-    private var generateStoryCard: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.minaAI)
-                
-                Text("Monthly Story")
-                    .font(.minaHeadline)
-                    .foregroundStyle(Color.minaPrimary)
-                
-                Spacer()
-            }
-            
-            if let error = store.storyGenerationError {
-                Text(error)
-                    .font(.minaCaption1)
-                    .foregroundStyle(Color.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            Button {
-                store.send(.generateNewStory)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 14))
-                    Text("Generate Story")
-                        .font(.minaSubheadline)
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.minaAI)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+    private var calendarDays: [Date] {
+        let calendar = Calendar.current
+        let month = store.calendarMonth
+        
+        guard let range = calendar.range(of: .day, in: .month, for: month),
+              let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: month)) else {
+            return []
+        }
+        
+        // Weekday of first day (1=Sunday, adjust for Monday start)
+        let firstWeekday = calendar.component(.weekday, from: firstOfMonth)
+        let mondayOffset = (firstWeekday + 5) % 7 // Mon=0
+        
+        var dates: [Date] = []
+        
+        // Padding days from previous month
+        for i in (0..<mondayOffset).reversed() {
+            if let date = calendar.date(byAdding: .day, value: -(i + 1), to: firstOfMonth) {
+                dates.append(date)
             }
         }
-        .padding(20)
-        .background(Color.minaCardSolid)
+        
+        // Days of current month
+        for day in range {
+            if let date = calendar.date(byAdding: .day, value: day - 1, to: firstOfMonth) {
+                dates.append(date)
+            }
+        }
+        
+        // Padding days to complete last week
+        let remainder = dates.count % 7
+        if remainder > 0 {
+            let lastDate = dates.last ?? firstOfMonth
+            for i in 1...(7 - remainder) {
+                if let date = calendar.date(byAdding: .day, value: i, to: lastDate) {
+                    dates.append(date)
+                }
+            }
+        }
+        
+        return dates
+    }
+    
+    private func calendarDayCell(_ date: Date) -> some View {
+        let calendar = Calendar.current
+        let isCurrentMonth = calendar.isDate(date, equalTo: store.calendarMonth, toGranularity: .month)
+        let isToday = calendar.isDateInToday(date)
+        let dateKey = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter.string(from: date)
+        }()
+        let dayData = store.moodCalendar[dateKey]
+        let dayNumber = calendar.component(.day, from: date)
+        
+        return ZStack {
+            // Background based on mood
+            if let data = dayData, let mood = data.mood, isCurrentMonth {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(moodColor(mood).opacity(0.7))
+            } else if isCurrentMonth {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.minaSecondary.opacity(0.05))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.clear)
+            }
+            
+            VStack(spacing: 1) {
+                Text("\(dayNumber)")
+                    .font(.system(size: 11, weight: isToday ? .bold : .regular))
+                    .foregroundStyle(
+                        !isCurrentMonth ? Color.minaTertiary :
+                        dayData?.mood != nil ? .white :
+                        isToday ? Color.minaAccent :
+                        Color.minaPrimary
+                    )
+                
+                if let data = dayData, data.entryCount > 0, isCurrentMonth {
+                    Circle()
+                        .fill(dayData?.mood != nil ? Color.white.opacity(0.8) : Color.minaAccent)
+                        .frame(width: 4, height: 4)
+                }
+            }
+        }
+        .frame(height: 36)
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.minaAI.opacity(0.2), lineWidth: 1)
+            isToday && isCurrentMonth ?
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.minaAccent, lineWidth: 1.5)
+            : nil
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private func moodColor(_ mood: Mood) -> Color {
+        switch mood {
+        case .great: return Color(hex: "34C759")
+        case .good: return Color(hex: "30D158")
+        case .okay: return Color(hex: "FF9500")
+        case .low: return Color(hex: "FF6B35")
+        case .bad: return Color(hex: "FF3B30")
+        }
+    }
+    
+    /// Condense writing activity data for display (max ~30 bars).
+    private var activityDisplayData: [InsightsFeature.ActivityDataPoint] {
+        let data = store.writingActivity
+        guard !data.isEmpty else { return [] }
+        
+        // For week/month, show daily. For longer periods, bucket into weeks.
+        switch store.selectedPeriod {
+        case .week, .month:
+            return data
+        case .threeMonths, .year:
+            // Group by week
+            let calendar = Calendar.current
+            var weekBuckets: [Date: (count: Int, words: Int)] = [:]
+            for point in data {
+                let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: point.date)) ?? point.date
+                var bucket = weekBuckets[weekStart] ?? (count: 0, words: 0)
+                bucket.count += point.entryCount
+                bucket.words += point.wordCount
+                weekBuckets[weekStart] = bucket
+            }
+            return weekBuckets.sorted { $0.key < $1.key }.map { key, value in
+                InsightsFeature.ActivityDataPoint(id: UUID(), date: key, entryCount: value.count, wordCount: value.words)
+            }
+        }
     }
 }
 
@@ -511,7 +989,6 @@ private struct TopicRow: View {
             
             Spacer()
             
-            // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -531,6 +1008,51 @@ private struct TopicRow: View {
                 .foregroundStyle(Color.minaSecondary)
                 .frame(width: 24, alignment: .trailing)
         }
+    }
+}
+
+private struct ActivityMiniStat: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.minaPrimary)
+            
+            Text(label)
+                .font(.minaCaption2)
+                .foregroundStyle(Color.minaSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct PatternPill: View {
+    let icon: String
+    let label: String
+    let value: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.minaAccent)
+            
+            Text(value)
+                .font(.minaCaption1)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.minaPrimary)
+            
+            Text(label)
+                .font(.minaCaption2)
+                .foregroundStyle(Color.minaSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color.minaSecondary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -556,8 +1078,8 @@ struct MoodChartView: View {
                     .stroke(Color.minaSecondary.opacity(0.1), lineWidth: 1)
                 }
                 
-                // Line chart
                 if data.count > 1 {
+                    // Smoothed line chart
                     Path { path in
                         for (index, point) in data.enumerated() {
                             let x = CGFloat(index) * pointSpacing
@@ -589,29 +1111,28 @@ struct MoodChartView: View {
                             path.addLine(to: CGPoint(x: x, y: y))
                         }
                         
-                        path.addLine(to: CGPoint(x: width, y: height))
+                        path.addLine(to: CGPoint(x: CGFloat(data.count - 1) * pointSpacing, y: height))
                         path.closeSubpath()
                     }
                     .fill(
                         LinearGradient(
-                            colors: [Color.minaAccent.opacity(0.2), Color.minaAccent.opacity(0.05)],
+                            colors: [Color.minaAccent.opacity(0.2), Color.minaAccent.opacity(0.02)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 }
                 
-                // Data points
-                ForEach(Array(data.suffix(7).enumerated()), id: \.1.id) { index, point in
-                    let totalPoints = min(data.count, 7)
-                    let startIndex = max(0, data.count - 7)
-                    let actualIndex = startIndex + index
-                    let x = CGFloat(actualIndex) * pointSpacing
+                // Data points (show subset for readability)
+                let step = max(data.count / 10, 1)
+                ForEach(Array(stride(from: 0, to: data.count, by: step)), id: \.self) { index in
+                    let point = data[index]
+                    let x = CGFloat(index) * pointSpacing
                     let y = height - (height * CGFloat(point.value - 1) / 4.0)
                     
                     Circle()
                         .fill(Color.white)
-                        .frame(width: 8, height: 8)
+                        .frame(width: 6, height: 6)
                         .overlay(
                             Circle()
                                 .stroke(Color.minaAccent, lineWidth: 2)
@@ -619,6 +1140,33 @@ struct MoodChartView: View {
                         .position(x: x, y: y)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Writing Activity Chart
+
+struct WritingActivityChartView: View {
+    let data: [InsightsFeature.ActivityDataPoint]
+    
+    var body: some View {
+        GeometryReader { geo in
+            let maxEntries = max(data.map(\.entryCount).max() ?? 1, 1)
+            let barWidth = max((geo.size.width - CGFloat(data.count - 1) * 2) / CGFloat(data.count), 2)
+            
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(data) { point in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(point.entryCount > 0 ? Color.minaAccent.opacity(0.6 + 0.4 * Double(point.entryCount) / Double(maxEntries)) : Color.minaSecondary.opacity(0.08))
+                        .frame(
+                            width: barWidth,
+                            height: point.entryCount > 0
+                                ? max(CGFloat(point.entryCount) / CGFloat(maxEntries) * geo.size.height, 3)
+                                : 2
+                        )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
     }
 }
