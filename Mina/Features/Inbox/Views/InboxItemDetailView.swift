@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ComposableArchitecture
 
 // MARK: - Inbox Item Detail View
@@ -282,7 +283,7 @@ struct InboxItemDetailView: View {
                 Spacer()
                 
                 Button {
-                    // TODO: Copy to clipboard
+                    UIPasteboard.general.string = text
                 } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 14))
@@ -326,7 +327,8 @@ struct InboxItemDetailView: View {
             } else {
                 // View entry button
                 Button {
-                    // TODO: Navigate to entry
+                    // Cross-tab navigation not available; dismiss detail view for now
+                    store.send(.dismiss)
                 } label: {
                     HStack {
                         Image(systemName: "book.fill")

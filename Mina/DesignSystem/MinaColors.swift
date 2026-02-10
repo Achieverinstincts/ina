@@ -1,59 +1,93 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Mina Color Palette
 // Design tokens matching the warm, minimalist aesthetic from reference
+// Supports both light and dark mode via UIColor trait collection
 
 extension Color {
     
     // MARK: - Background Colors
     
-    /// Primary app background - warm cream (#FDF8F3)
-    static let minaBackground = Color(hex: "FDF8F3")
+    /// Primary app background - warm cream (light) / near black (dark)
+    static let minaBackground = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0x1A/255, green: 0x1A/255, blue: 0x1E/255, alpha: 1)
+            : UIColor(red: 0xFD/255, green: 0xF8/255, blue: 0xF3/255, alpha: 1)
+    })
     
-    /// Card/surface background - translucent white
-    static let minaCardBackground = Color.white.opacity(0.6)
+    /// Card/surface background - translucent white (light) / translucent white (dark)
+    static let minaCardBackground = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.1)
+            : UIColor.white.withAlphaComponent(0.6)
+    })
     
     /// Solid card background for elevated elements
-    static let minaCardSolid = Color.white
+    static let minaCardSolid = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0x2C/255, green: 0x2C/255, blue: 0x2E/255, alpha: 1)
+            : UIColor.white
+    })
     
     // MARK: - Text Colors
     
-    /// Primary text - near black
-    static let minaPrimary = Color(hex: "1A1A1A")
+    /// Primary text - near black (light) / near white (dark)
+    static let minaPrimary = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0xF5/255, green: 0xF5/255, blue: 0xF5/255, alpha: 1)
+            : UIColor(red: 0x1A/255, green: 0x1A/255, blue: 0x1A/255, alpha: 1)
+    })
     
     /// Secondary text - muted gray
-    static let minaSecondary = Color(hex: "8E8E93")
+    static let minaSecondary = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0xAE/255, green: 0xAE/255, blue: 0xB2/255, alpha: 1)
+            : UIColor(red: 0x8E/255, green: 0x8E/255, blue: 0x93/255, alpha: 1)
+    })
     
     /// Tertiary/placeholder text
-    static let minaTertiary = Color(hex: "C7C7CC")
+    static let minaTertiary = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0x48/255, green: 0x48/255, blue: 0x4A/255, alpha: 1)
+            : UIColor(red: 0xC7/255, green: 0xC7/255, blue: 0xCC/255, alpha: 1)
+    })
     
     // MARK: - Accent Colors
     
-    /// Warm orange accent (streak, highlights)
+    /// Warm orange accent (streak, highlights) - same both modes
     static let minaAccent = Color(hex: "FF6B35")
     
-    /// AI sparkle color - purple gradient base
+    /// AI sparkle color - purple gradient base - same both modes
     static let minaAI = Color(hex: "8B5CF6")
     
-    /// Success/positive - soft green
+    /// Success/positive - soft green - same both modes
     static let minaSuccess = Color(hex: "34C759")
     
-    /// Warning - amber
+    /// Warning - amber - same both modes
     static let minaWarning = Color(hex: "FF9500")
     
-    /// Error/destructive - soft red
+    /// Error/destructive - soft red - same both modes
     static let minaError = Color(hex: "FF3B30")
     
     // MARK: - Semantic Colors
     
-    /// Streak fire color
+    /// Streak fire color - same both modes
     static let minaStreak = Color(hex: "FF6B35")
     
     /// Divider/separator
-    static let minaDivider = Color(hex: "E5E5EA")
+    static let minaDivider = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0x38/255, green: 0x38/255, blue: 0x3A/255, alpha: 1)
+            : UIColor(red: 0xE5/255, green: 0xE5/255, blue: 0xEA/255, alpha: 1)
+    })
     
     /// Shadow color
-    static let minaShadow = Color.black.opacity(0.05)
+    static let minaShadow = Color(uiColor: UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor.black.withAlphaComponent(0.20)
+            : UIColor.black.withAlphaComponent(0.05)
+    })
 }
 
 // MARK: - Hex Initializer
@@ -89,11 +123,14 @@ extension Color {
 // MARK: - Color Scheme Support
 
 extension Color {
-    /// Returns appropriate color for current color scheme
-    /// For now, Mina uses light mode only (matching reference aesthetic)
+    /// Returns the appropriate color for the current interface style.
+    /// Uses UIColor's dynamic provider to resolve at render time.
     static func minaAdaptive(light: Color, dark: Color) -> Color {
-        // TODO: Implement dark mode support
-        return light
+        Color(uiColor: UIColor { traitCollection in
+            traitCollection.userInterfaceStyle == .dark
+                ? UIColor(dark)
+                : UIColor(light)
+        })
     }
 }
 

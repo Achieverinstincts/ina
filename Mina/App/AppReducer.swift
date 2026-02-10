@@ -234,7 +234,7 @@ extension AppReducer {
         case .voiceEntry:
             store.send(.tabSelected(.journal))
             store.send(.journal(.newEntryTapped))
-            // TODO: Trigger voice recording
+            store.send(.journal(.startRecording))
         }
     }
 }

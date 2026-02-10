@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import Photos
 import ComposableArchitecture
 
 // MARK: - Gallery Feature Reducer
@@ -31,6 +33,15 @@ struct GalleryFeature {
         
         /// Search query
         var searchQuery: String = ""
+        
+        /// Error message for load failures
+        var errorMessage: String? = nil
+        
+        /// Data to share via share sheet
+        var shareData: Data? = nil
+        
+        /// Whether the share sheet is showing
+        var isShowingShareSheet: Bool = false
         
         /// Filtered artworks based on current filters
         var filteredArtworks: IdentifiedArrayOf<ArtworkItem> {
@@ -227,8 +238,7 @@ struct GalleryFeature {
                 
             case let .loadFailed(error):
                 state.isLoading = false
-                // TODO: Show error alert
-                print("Gallery load failed: \(error)")
+                state.errorMessage = error
                 return .none
                 
             case let .timeFilterChanged(filter):
@@ -349,19 +359,22 @@ struct GalleryFeature {
                 return .none
                 
             case let .shareArtwork(artwork):
-                // TODO: Present share sheet
-                print("Sharing artwork: \(artwork.entryTitle)")
+                if let data = artwork.imageData {
+                    state.shareData = data
+                    state.isShowingShareSheet = true
+                }
                 return .none
                 
             case let .saveToPhotos(artwork):
-                // TODO: Save to photo library
-                print("Saving to photos: \(artwork.entryTitle)")
-                return .none
+                guard let imageData = artwork.imageData else { return .none }
+                return .run { _ in
+                    guard let image = UIImage(data: imageData) else { return }
+                    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+                }
                 
             case let .deleteArtwork(artworkId):
                 state.artworks.remove(id: artworkId)
                 return .run { send in
-                    // TODO: Delete from database
                     await send(.artworkDeleted(artworkId))
                 }
                 

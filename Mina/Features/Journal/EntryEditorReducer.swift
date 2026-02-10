@@ -124,6 +124,7 @@ struct EntryEditorFeature {
     @Dependency(\.databaseClient) var database
     @Dependency(\.dateClient) var dateClient
     @Dependency(\.dismiss) var dismiss
+    @Dependency(\.geminiClient) var geminiClient
     
     // MARK: - Reducer
     
@@ -212,16 +213,16 @@ struct EntryEditorFeature {
             case .generateTitleTapped:
                 guard !state.content.isEmpty else { return .none }
                 state.isAIGenerating = true
+                let content = state.content
                 
-                // TODO: Integrate actual AI service
-                // For now, generate a simple title from first few words
-                let words = state.content.split(separator: " ").prefix(5)
-                let generatedTitle = words.joined(separator: " ") + "..."
-                
-                return .run { send in
-                    // Simulate AI delay
-                    try await Task.sleep(for: .milliseconds(500))
-                    await send(.titleGenerated(generatedTitle))
+                return .run { [geminiClient] send in
+                    do {
+                        let prompt = "Generate a short, evocative journal entry title for the following content: \(content). Return only the title, nothing else."
+                        let title = try await geminiClient.generateText(prompt)
+                        await send(.titleGenerated(title.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    } catch {
+                        await send(.aiGenerationFailed(error.localizedDescription))
+                    }
                 }
                 
             case let .titleGenerated(title):
@@ -235,19 +236,14 @@ struct EntryEditorFeature {
             case .generatePromptTapped:
                 state.isAIGenerating = true
                 
-                // TODO: Integrate actual AI service
-                let prompts = [
-                    "What are you grateful for today?",
-                    "Describe a moment that made you smile.",
-                    "What's on your mind right now?",
-                    "What would make today great?",
-                    "Reflect on a recent challenge and what you learned."
-                ]
-                let randomPrompt = prompts.randomElement() ?? prompts[0]
-                
-                return .run { send in
-                    try await Task.sleep(for: .milliseconds(300))
-                    await send(.promptGenerated(randomPrompt))
+                return .run { [geminiClient] send in
+                    do {
+                        let prompt = "Generate one creative, thought-provoking journal writing prompt. Return only the prompt text, nothing else."
+                        let result = try await geminiClient.generateText(prompt)
+                        await send(.promptGenerated(result.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    } catch {
+                        await send(.aiGenerationFailed(error.localizedDescription))
+                    }
                 }
                 
             case let .promptGenerated(prompt):
@@ -285,19 +281,19 @@ struct EntryEditorFeature {
             // MARK: Child Actions
                 
             case .activeInput(.micTapped):
-                // TODO: Start voice recording
+                // Handled by parent JournalFeature
                 return .none
                 
             case .activeInput(.cameraTapped):
-                // TODO: Open camera
+                // Handled by parent JournalFeature
                 return .none
                 
             case .activeInput(.scanTapped):
-                // TODO: Open document scanner
+                // Handled by parent JournalFeature
                 return .none
                 
             case .activeInput(.attachTapped):
-                // TODO: Open file picker
+                // Handled by parent JournalFeature
                 return .none
                 
             case .activeInput:

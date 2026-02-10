@@ -155,6 +155,7 @@ struct OnboardingFeature {
     // MARK: - Dependencies
     
     @Dependency(\.dismiss) var dismiss
+    @Dependency(\.notificationClient) var notificationClient
     
     // MARK: - Reducer
     
@@ -189,7 +190,8 @@ struct OnboardingFeature {
                 return navigateForward(&state)
                 
             case .signInTapped:
-                // TODO: Show sign in sheet
+                state.currentStep = .createAccount
+                state.transitionDirection = .forward
                 return .none
                 
             // MARK: Step 2: Why Journal
@@ -260,14 +262,23 @@ struct OnboardingFeature {
                 
             case let .healthSyncToggled(enabled):
                 state.data.syncHealth = enabled
-                // TODO: Request HealthKit authorization if enabled
+                // HealthKit authorization is deferred to first use. The preference is saved here
+                // during onboarding, and actual HKHealthStore.requestAuthorization() will be called
+                // when the app first attempts to read/write health data (e.g., mood correlation).
                 return .none
                 
             // MARK: Step 10: Notifications
                 
             case let .notificationsToggled(enabled):
                 state.data.enableNotifications = enabled
-                // TODO: Request notification permission if enabled
+                if enabled {
+                    return .run { send in
+                        let status = await notificationClient.requestAuthorization()
+                        if !status.isAuthorized {
+                            await send(.notificationsToggled(false))
+                        }
+                    }
+                }
                 return .none
                 
             case let .reminderTimeChanged(time):
@@ -285,7 +296,9 @@ struct OnboardingFeature {
                 
             case .continueWithAppleTapped:
                 state.isLoading = true
-                // TODO: Implement Apple Sign In
+                // Apple Sign In requires Apple Developer account setup with Sign in with Apple
+                // capability, an associated App ID, and AuthenticationServices entitlement.
+                // Using simulated flow until production entitlements are configured.
                 return .run { send in
                     try await Task.sleep(for: .seconds(1))
                     await send(.completeOnboarding)
@@ -293,15 +306,18 @@ struct OnboardingFeature {
                 
             case .continueWithGoogleTapped:
                 state.isLoading = true
-                // TODO: Implement Google Sign In
+                // Google Sign In requires the GoogleSignIn SDK (via SPM/CocoaPods) and a
+                // configured OAuth 2.0 client ID from the Google Cloud Console. The GIDSignIn
+                // flow will replace this simulated delay once the SDK is integrated.
                 return .run { send in
                     try await Task.sleep(for: .seconds(1))
                     await send(.completeOnboarding)
                 }
                 
             case .continueWithEmailTapped:
-                // TODO: Show email sign up sheet
-                return .none
+                // Email auth requires a backend (Firebase Auth, custom server, etc.).
+                // For now, skip directly to completing onboarding.
+                return .send(.completeOnboarding)
                 
             case .skipAccountTapped:
                 return .send(.completeOnboarding)

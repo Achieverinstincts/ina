@@ -35,6 +35,7 @@ struct SettingsFeature {
         /// Data
         var totalEntries: Int = 0
         var storageUsed: String = "0 MB"
+        var exportedData: Data? = nil
         
         /// UI State
         var showingSignIn: Bool = false
@@ -202,11 +203,18 @@ struct SettingsFeature {
         
         // Data loading
         case statsLoaded(entries: Int, storage: String)
+        
+        // Internal
+        case _biometricAuthFailed
+        case _exportDataReady(Data)
     }
     
     // MARK: - Dependencies
     
     @Dependency(\.openURL) var openURL
+    @Dependency(\.databaseClient) var databaseClient
+    @Dependency(\.notificationClient) var notificationClient
+    @Dependency(\.biometricClient) var biometricClient
     
     // MARK: - Reducer
     
@@ -227,8 +235,23 @@ struct SettingsFeature {
                     state.buildNumber = build
                 }
                 
-                // TODO: Load actual stats from database
-                return .none
+                // Load actual stats from database
+                return .run { send in
+                    let entryCount = try await databaseClient.totalEntryCount()
+                    let allEntries = try await databaseClient.fetchAllEntries()
+                    let totalBytes = allEntries.reduce(0) { sum, entry in
+                        sum + (entry.content.utf8.count + entry.title.utf8.count)
+                    }
+                    let storageMB = Double(totalBytes) / (1024.0 * 1024.0)
+                    let storageString: String
+                    if storageMB < 1.0 {
+                        let storageKB = Double(totalBytes) / 1024.0
+                        storageString = String(format: "%.1f KB", storageKB)
+                    } else {
+                        storageString = String(format: "%.1f MB", storageMB)
+                    }
+                    await send(.statsLoaded(entries: entryCount, storage: storageString))
+                }
                 
             // MARK: Account
                 
@@ -280,8 +303,18 @@ struct SettingsFeature {
                 
             case let .reminderToggled(enabled):
                 state.dailyReminderEnabled = enabled
-                // TODO: Schedule/cancel notifications
-                return .none
+                let reminderTime = state.reminderTime
+                return .run { _ in
+                    if enabled {
+                        _ = await notificationClient.requestAuthorization()
+                        try await notificationClient.scheduleDailyReminder(
+                            reminderTime,
+                            "Time to reflect on your day. Open Mina to write a journal entry."
+                        )
+                    } else {
+                        await notificationClient.cancelAllNotifications()
+                    }
+                }
                 
             case .reminderTimeTapped:
                 state.showingTimePicker = true
@@ -289,8 +322,15 @@ struct SettingsFeature {
                 
             case let .reminderTimeChanged(time):
                 state.reminderTime = time
-                // TODO: Reschedule notification
-                return .none
+                let shouldReschedule = state.dailyReminderEnabled
+                return .run { _ in
+                    if shouldReschedule {
+                        try await notificationClient.rescheduleReminder(
+                            time,
+                            "Time to reflect on your day. Open Mina to write a journal entry."
+                        )
+                    }
+                }
                 
             case let .weeklyReflectionToggled(enabled):
                 state.weeklyReflectionEnabled = enabled
@@ -304,7 +344,20 @@ struct SettingsFeature {
                 
             case let .faceIDToggled(enabled):
                 state.faceIDEnabled = enabled
-                // TODO: Configure biometric authentication
+                if enabled {
+                    return .run { send in
+                        do {
+                            let success = try await biometricClient.authenticate(
+                                "Authenticate to enable biometric lock for Mina"
+                            )
+                            if !success {
+                                await send(._biometricAuthFailed)
+                            }
+                        } catch {
+                            await send(._biometricAuthFailed)
+                        }
+                    }
+                }
                 return .none
                 
             case let .passcodeToggled(enabled):
@@ -353,8 +406,14 @@ struct SettingsFeature {
                 
             case .confirmClearData:
                 state.showingClearDataConfirmation = false
-                // TODO: Clear all data
-                return .none
+                state.totalEntries = 0
+                state.storageUsed = "0 KB"
+                return .run { _ in
+                    let entries = try await databaseClient.fetchAllEntries()
+                    for entry in entries {
+                        try await databaseClient.deleteEntry(entry.id)
+                    }
+                }
                 
             case .dismissClearDataConfirmation:
                 state.showingClearDataConfirmation = false
@@ -366,8 +425,57 @@ struct SettingsFeature {
                 
             case let .exportFormatSelected(format):
                 state.showingExportOptions = false
-                // TODO: Actually export data in chosen format
-                return .none
+                return .run { send in
+                    let entries = try await databaseClient.fetchAllEntries()
+                    let data: Data
+                    
+                    switch format {
+                    case .json:
+                        let exportEntries = entries.map { entry in
+                            [
+                                "id": entry.id.uuidString,
+                                "title": entry.displayTitle,
+                                "content": entry.content,
+                                "createdAt": ISO8601DateFormatter().string(from: entry.createdAt),
+                                "updatedAt": ISO8601DateFormatter().string(from: entry.updatedAt),
+                                "mood": entry.moodRawValue ?? "",
+                                "tags": entry.tags.joined(separator: ", "),
+                                "wordCount": "\(entry.wordCount)"
+                            ]
+                        }
+                        data = try JSONSerialization.data(
+                            withJSONObject: exportEntries,
+                            options: [.prettyPrinted, .sortedKeys]
+                        )
+                        
+                    case .plainText, .pdf:
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateStyle = .long
+                        dateFormatter.timeStyle = .short
+                        
+                        var text = "Mina Journal Export\n"
+                        text += "Generated: \(dateFormatter.string(from: Date()))\n"
+                        text += "Total Entries: \(entries.count)\n"
+                        text += String(repeating: "=", count: 50) + "\n\n"
+                        
+                        for entry in entries {
+                            text += "Title: \(entry.displayTitle)\n"
+                            text += "Date: \(dateFormatter.string(from: entry.createdAt))\n"
+                            if let mood = entry.mood {
+                                text += "Mood: \(mood.emoji) \(mood.label)\n"
+                            }
+                            if !entry.tags.isEmpty {
+                                text += "Tags: \(entry.tags.joined(separator: ", "))\n"
+                            }
+                            text += "\n\(entry.content)\n"
+                            text += "\n" + String(repeating: "-", count: 50) + "\n\n"
+                        }
+                        
+                        data = Data(text.utf8)
+                    }
+                    
+                    await send(._exportDataReady(data))
+                }
                 
             // MARK: About
                 
@@ -463,6 +571,15 @@ struct SettingsFeature {
             case let .statsLoaded(entries, storage):
                 state.totalEntries = entries
                 state.storageUsed = storage
+                return .none
+                
+            case ._biometricAuthFailed:
+                state.faceIDEnabled = false
+                return .none
+                
+            case let ._exportDataReady(data):
+                state.exportedData = data
+                state.showingShareSheet = true
                 return .none
             }
         }

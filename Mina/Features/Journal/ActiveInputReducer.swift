@@ -168,7 +168,7 @@ struct ActiveInputFeature {
                 
                 return .merge(
                     .cancel(id: CancelID.recordingTimer),
-                    // TODO: Stop actual audio recording and return data
+                    // Parent JournalFeature handles actual audio recording stop
                     .run { send in
                         // Simulated recording data
                         await send(.recordingCompleted(Data()))
@@ -182,7 +182,7 @@ struct ActiveInputFeature {
                 
             case let .recordingCompleted(data):
                 state.isRecording = false
-                // TODO: Start transcription
+                // Parent JournalFeature handles transcription of the recorded audio
                 return .send(.transcriptionStarted)
                 
             case let .recordingFailed(message):

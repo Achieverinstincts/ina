@@ -41,6 +41,18 @@ struct InsightsFeature {
         /// Show story detail
         @Presents var storyDetail: MonthlyStoryDetailFeature.State?
         
+        /// Shareable text generated from current insights
+        var shareText: String? = nil
+        
+        /// Whether the share sheet is being presented
+        var isShowingShareSheet: Bool = false
+        
+        /// Exported JSON data URL for sharing
+        var exportedDataURL: URL? = nil
+        
+        /// Whether the export share sheet is being presented
+        var isShowingExportSheet: Bool = false
+        
         /// Average mood for selected period
         var averageMood: Double {
             guard !moodData.isEmpty else { return 0 }
@@ -187,12 +199,17 @@ struct InsightsFeature {
         /// Sharing
         case shareInsights
         case exportData
+        case dismissShareSheet
+        case dismissExportSheet
+        case exportCompleted(URL)
+        case exportFailed(String)
     }
     
     // MARK: - Dependencies
     
     @Dependency(\.continuousClock) var clock
     @Dependency(\.geminiClient) var geminiClient
+    @Dependency(\.databaseClient) var databaseClient
     
     // MARK: - Reducer
     
@@ -346,11 +363,97 @@ struct InsightsFeature {
                 return .none
                 
             case .shareInsights:
-                // TODO: Generate shareable insights card
+                let stats = state.stats
+                let moodTrend = state.moodTrend
+                let streak = state.streakInfo
+                let period = state.selectedPeriod.label
+                let topTopics = state.topTopics.prefix(3).map(\.topic).joined(separator: ", ")
+                
+                var lines: [String] = []
+                lines.append("My Mina Journal Insights (\(period))")
+                lines.append(String(repeating: "-", count: 36))
+                lines.append("")
+                lines.append("Entries: \(stats.entriesThisPeriod) this \(period.lowercased()) (\(stats.totalEntries) total)")
+                lines.append("Words written: \(stats.totalWords.formatted())")
+                lines.append("Avg words/entry: \(stats.averageWordsPerEntry)")
+                lines.append("")
+                lines.append("Mood trend: \(moodTrend)")
+                lines.append("Most productive: \(stats.mostProductiveDay)s, \(stats.mostProductiveTime)")
+                lines.append("")
+                lines.append("Streak: \(streak.currentStreak) days (best: \(streak.longestStreak))")
+                lines.append("Total days journaled: \(streak.totalDaysJournaled)")
+                if !topTopics.isEmpty {
+                    lines.append("")
+                    lines.append("Top topics: \(topTopics)")
+                }
+                lines.append("")
+                lines.append("Powered by Mina - Your AI Journal")
+                
+                state.shareText = lines.joined(separator: "\n")
+                state.isShowingShareSheet = true
                 return .none
                 
             case .exportData:
-                // TODO: Export journal data
+                return .run { send in
+                    do {
+                        let entries = try await databaseClient.fetchAllEntries()
+                        
+                        struct ExportEntry: Codable {
+                            let id: String
+                            let title: String
+                            let content: String
+                            let createdAt: String
+                            let updatedAt: String
+                            let mood: String?
+                            let tags: [String]
+                        }
+                        
+                        let iso = ISO8601DateFormatter()
+                        let exportEntries = entries.map { entry in
+                            ExportEntry(
+                                id: entry.id.uuidString,
+                                title: entry.title,
+                                content: entry.content,
+                                createdAt: iso.string(from: entry.createdAt),
+                                updatedAt: iso.string(from: entry.updatedAt),
+                                mood: entry.moodRawValue,
+                                tags: entry.tags
+                            )
+                        }
+                        
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                        let data = try encoder.encode(exportEntries)
+                        
+                        let tempDir = FileManager.default.temporaryDirectory
+                        let dateStr = ISO8601DateFormatter().string(from: Date())
+                            .replacingOccurrences(of: ":", with: "-")
+                        let fileURL = tempDir.appendingPathComponent("mina-journal-export-\(dateStr).json")
+                        try data.write(to: fileURL)
+                        
+                        await send(.exportCompleted(fileURL))
+                    } catch {
+                        await send(.exportFailed(error.localizedDescription))
+                    }
+                }
+                
+            case let .exportCompleted(url):
+                state.exportedDataURL = url
+                state.isShowingExportSheet = true
+                return .none
+                
+            case let .exportFailed(error):
+                print("Export failed: \(error)")
+                return .none
+                
+            case .dismissShareSheet:
+                state.isShowingShareSheet = false
+                state.shareText = nil
+                return .none
+                
+            case .dismissExportSheet:
+                state.isShowingExportSheet = false
+                state.exportedDataURL = nil
                 return .none
             }
         }

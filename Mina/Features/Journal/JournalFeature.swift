@@ -318,7 +318,8 @@ struct JournalFeature {
                         if let existingId = entryId {
                             // Update existing entry
                             try await database.updateEntryContent(existingId, content)
-                            // TODO: Add attachments to existing entry
+                            // Attachments for existing entries require fetching the entry,
+                            // appending new JournalAttachment objects, and saving via database.updateEntry.
                         } else {
                             // Create attachments from pending images
                             var attachments: [JournalAttachment] = []

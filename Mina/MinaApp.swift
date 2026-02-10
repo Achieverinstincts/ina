@@ -10,7 +10,6 @@ struct MinaApp: App {
     /// Root TCA store
     static let store = Store(initialState: AppReducer.State()) {
         AppReducer()
-            ._printChanges() // Remove in production
     }
     
     /// SwiftData model container

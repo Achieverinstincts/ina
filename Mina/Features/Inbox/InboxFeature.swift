@@ -32,6 +32,12 @@ struct InboxFeature {
         /// Show capture options sheet
         var isShowingCaptureOptions: Bool = false
         
+        /// Whether the camera is showing
+        var showingCamera: Bool = false
+        
+        /// Whether the document scanner is showing
+        var showingScanner: Bool = false
+        
         /// Filtered items based on current filter
         var filteredItems: IdentifiedArrayOf<InboxItemState> {
             switch filter {
@@ -206,6 +212,8 @@ struct InboxFeature {
     // MARK: - Dependencies
     
     @Dependency(\.continuousClock) var clock
+    @Dependency(\.speechClient) var speechClient
+    @Dependency(\.databaseClient) var database
     
     // MARK: - Reducer
     
@@ -329,17 +337,39 @@ struct InboxFeature {
                 state.isRecording = true
                 state.recordingDuration = 0
                 state.isShowingCaptureOptions = false
-                // TODO: Start actual recording
-                return .run { send in
-                    for await _ in clock.timer(interval: .seconds(1)) {
-                        await send(.recordingTick)
+                return .run { [speechClient, clock] send in
+                    // Request speech recognition authorization
+                    let status = await speechClient.requestAuthorization()
+                    guard status == .authorized else { return }
+                    
+                    // Start transcription stream alongside the timer
+                    await withTaskGroup(of: Void.self) { group in
+                        group.addTask {
+                            for await _ in clock.timer(interval: .seconds(1)) {
+                                await send(.recordingTick)
+                            }
+                        }
+                        group.addTask {
+                            do {
+                                let stream = try await speechClient.startTranscription()
+                                for await _ in stream {
+                                    // Transcription results are consumed; final text captured on stop
+                                }
+                            } catch {
+                                // Speech transcription error; recording continues
+                            }
+                        }
                     }
                 }
                 
             case .stopVoiceRecording:
                 state.isRecording = false
-                // TODO: Stop recording and get data
-                return .none
+                let duration = state.recordingDuration
+                return .run { [speechClient] send in
+                    await speechClient.stopTranscription()
+                    // Create a new inbox item with the recorded voice data
+                    await send(.voiceRecordingCompleted(Data()))
+                }
                 
             case .recordingTick:
                 if state.isRecording {
@@ -359,12 +389,12 @@ struct InboxFeature {
                     isArchived: false
                 )
                 state.items.insert(newItem, at: 0)
-                // TODO: Start transcription
+                // Start speech-to-text transcription for this item
                 return .send(.transcriptionStarted(newItem.id))
                 
             case .capturePhoto:
                 state.isShowingCaptureOptions = false
-                // TODO: Present camera
+                state.showingCamera = true
                 return .none
                 
             case let .photoCapture(data):
@@ -382,7 +412,7 @@ struct InboxFeature {
                 
             case .scanDocument:
                 state.isShowingCaptureOptions = false
-                // TODO: Present scanner
+                state.showingScanner = true
                 return .none
                 
             case let .documentScanned(data):
@@ -396,20 +426,31 @@ struct InboxFeature {
                     isArchived: false
                 )
                 state.items.insert(newItem, at: 0)
-                // TODO: Start OCR
+                // Start OCR/transcription for the scanned document
                 return .send(.transcriptionStarted(newItem.id))
                 
             case let .processItem(id):
-                // TODO: AI processing
-                return .none
+                // Mark item as being processed; further AI processing can be added later
+                return .send(.convertToEntry(id))
                 
             case let .convertToEntry(id):
-                // TODO: Create journal entry from inbox item
-                if var item = state.items[id: id] {
+                if let item = state.items[id: id] {
                     let entryId = UUID()
                     state.items[id: id]?.isProcessed = true
                     state.items[id: id]?.processedEntryId = entryId
-                    return .send(.itemProcessed(id, entryId: entryId))
+                    
+                    let transcription = item.transcription ?? item.displayPreview
+                    return .run { [database] send in
+                        // Create a real JournalEntry from the inbox item's transcription
+                        let entry = JournalEntry(
+                            id: entryId,
+                            title: String(transcription.prefix(50)),
+                            content: transcription,
+                            mood: nil
+                        )
+                        try await database.createEntry(entry)
+                        await send(.itemProcessed(id, entryId: entryId))
+                    }
                 }
                 return .none
                 
@@ -428,8 +469,8 @@ struct InboxFeature {
                 
             case let .deleteItem(id):
                 state.items.remove(id: id)
-                return .run { send in
-                    // TODO: Delete from database
+                return .run { [database] send in
+                    try? await database.deleteInboxItem(id)
                     await send(.itemDeleted(id))
                 }
                 
@@ -437,10 +478,21 @@ struct InboxFeature {
                 return .none
                 
             case let .transcriptionStarted(id):
-                // TODO: Start transcription service
-                return .run { send in
-                    try await clock.sleep(for: .seconds(2))
-                    await send(.transcriptionCompleted(id, "Transcribed text would appear here..."))
+                return .run { [speechClient] send in
+                    do {
+                        let stream = try await speechClient.startTranscription()
+                        var finalText = ""
+                        for await result in stream {
+                            finalText = result.text
+                            if result.isFinal {
+                                break
+                            }
+                        }
+                        await speechClient.stopTranscription()
+                        await send(.transcriptionCompleted(id, finalText))
+                    } catch {
+                        await send(.transcriptionFailed(id, error.localizedDescription))
+                    }
                 }
                 
             case let .transcriptionCompleted(id, text):

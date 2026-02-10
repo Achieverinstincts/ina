@@ -854,7 +854,8 @@ struct SignInSheet: View {
                 
                 // Apple Sign In placeholder
                 Button {
-                    // TODO: Implement Apple Sign In
+                    // Apple Sign In requires Apple Developer Program entitlements and ASAuthorizationController setup.
+                    // For now, dismiss the sheet. Wire up AuthenticationServices when credentials are configured.
                     store.send(.dismissSignIn)
                 } label: {
                     HStack(spacing: 8) {
@@ -940,7 +941,8 @@ struct SubscriptionSheet: View {
                     if store.subscriptionStatus == .free {
                         // Upgrade button
                         Button {
-                            // TODO: Implement subscription purchase
+                            // StoreKit 2 subscription purchase requires App Store Connect product setup.
+                            // Wire up Product.purchase() when subscription products are configured.
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "star.fill")
